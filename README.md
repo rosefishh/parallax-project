@@ -1,4 +1,4 @@
-# Parallax — AI-Based Fake Identity & Document Screening System
+# SNARE — AI-Based Fake Identity & Document Screening System
 
 Passport forensic & verification system built for **Smart India Hackathon (SIH 2026)**. It screens uploaded identity documents for authenticity using OCR, AI-image detection, tamper analysis, blacklist lookup, and facial verification against a live selfie — then produces an explainable risk score with an APPROVE / REVIEW / REJECT verdict and a downloadable audit certificate.
 
