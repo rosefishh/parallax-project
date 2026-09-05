@@ -18,37 +18,137 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(BASE_DIR, ".env")
 MODEL_PATH = os.path.join(BASE_DIR, "python_api", "models", "face_detection_yunet_2023mar.onnx")
 
-PASSPORT_RE = re.compile(r"[A-Z]{2}[0-9]{7}")
+PASSPORT_RE = re.compile(r"[A-Z]{1,2}[0-9]{7}")
 DATE_RE = re.compile(r"\b\d{2}[/\.-]\d{2}[/\.-]\d{4}\b")
 # Machine Readable Zone (MRZ) detail line: ...<6IND9001155M3112317<<...
 # Layout (line 2): <DOCNO><check><NAT3><DOB6><check><SEX1><EXP6><check>...
 # so DOB (YYMMDD) is 6 digits after the 3-letter nationality, followed by a
 # check digit, the single sex char, then EXP (YYMMDD) and a check digit.
-MRZ_RECORD_RE = re.compile(r"([A-Z]{3})(\d{6})\d([MFX])(\d{6})\d")
-MRZ_GENDER_RE = re.compile(r"\d{6}[MFX]")
+# The leading position of each 6-digit date may hold an ICAO swap character
+# (e.g. Z for a 20xx century) instead of a digit, so tolerate it there.
+MRZ_RECORD_RE = re.compile(r"([A-Z]{3})([0-9A-Z][0-9]{5})[0-9A-Z]?([MFX])([0-9A-Z][0-9]{5})[0-9A-Z]?")
+MRZ_GENDER_RE = re.compile(r"\d{5,6}[MFX]")
+# When an MRZ date carries a letter in its leading (decade) position, map it to
+# a digit before applying the normal 19xx/20xx rule. Z is "2" in practice (e.g.
+# "Z80807" -> 2028-08-07); keep entries we have actually observed.
+SWAP_DIGIT = {"Z": "2", "M": "2", "F": "2"}
 def normalize_date(value):
-    """Return an unambiguous YYYY-MM-DD string from DD-MM-YYYY or YYMMDD input."""
+    """Return an unambiguous YYYY-MM-DD string from DD-MM-YYYY or YYMMDD input.
+
+    MRZ dates are compact YYMMDD. A plausible date only (year 1900-2099) is
+    returned; anything else comes back None so garbage OCR never becomes a
+    real-looking date.
+    """
     if not value:
         return None
     value = value.strip()
-    if len(value) == 6 and value.isdigit():
-        # MRZ compact YYMMDD
-        yy, mm, dd = value[:2], value[2:4], value[4:6]
+    if len(value) == 6:
+        # MRZ compact YYMMDD, possibly with a swap letter in its decade slot.
+        first = value[0]
+        if first.isdigit():
+            yy, mm, dd = value[:2], value[2:4], value[4:6]
+        else:
+            decade = SWAP_DIGIT.get(first.upper())
+            if decade is None:
+                return None
+            yy, mm, dd = decade + value[1], value[2:4], value[4:6]
         year = 2000 + int(yy) if int(yy) <= 49 else 1900 + int(yy)
         try:
             import datetime
-            return datetime.date(year, int(mm), int(dd)).isoformat()
+            parsed = datetime.date(year, int(mm), int(dd))
         except (ValueError, TypeError):
             return None
+        if not (1900 <= parsed.year <= 2099):
+            return None
+        return parsed.isoformat()
     parts = re.split(r"[/\.-]", value)
     if len(parts) == 3 and len(parts[2]) == 4:
         dd, mm, yyyy = parts
         try:
             import datetime
-            return datetime.date(int(yyyy), int(mm), int(dd)).isoformat()
+            parsed = datetime.date(int(yyyy), int(mm), int(dd))
         except (ValueError, TypeError):
             return None
-    return value
+        if not (1900 <= parsed.year <= 2099):
+            return None
+        return parsed.isoformat()
+    return None
+
+
+def _best_date(candidates, raw_text, labels):
+    """First plausible date from MRZ candidates, else a label-guided one."""
+    for c in candidates:
+        if c:
+            return c
+    return _date_near(raw_text, labels)
+
+
+def _date_near(raw_text, labels, search_radius=240):
+    """Find the first date appearing within a few characters of a label."""
+    upper = raw_text.upper()
+    for label in labels:
+        idx = upper.find(label)
+        if idx == -1:
+            continue
+        m = DATE_RE.search(raw_text[idx:idx + search_radius])
+        if m:
+            return normalize_date(m.group(0))
+    return None
+
+
+def _mitigate_ocr_noise(s):
+    """Drop OCR filler characters and collapse noisy repeated-char trains.
+
+    Garbled MRZ/body lines often sprout runs like "KKKKK" or "6666666".
+    Collapsing consecutive identical letters to a single char and removing
+    identical-digit runs keeps real fields (letters immediately followed by a
+    7-digit passport number) intact while stripping the noise that would
+    otherwise merge into false document-number matches.
+    """
+    s = re.sub(r"[$`~#*\"']", "", s)
+    s = re.sub(r"([A-Z])\1{2,}", r"\1", s)
+    s = re.sub(r"([0-9])\1{2,}", "", s)
+    return s
+
+
+def _best_docnum_candidates(text):
+    best_key = None
+    best_value = None
+    for dm in re.finditer(r"(?=([A-Z]{1,2})([0-9]{7}))", text):
+        letters, digits = dm.group(1), dm.group(2)
+        if len(set(digits)) <= 1:
+            continue
+        # Prefer a candidate that begins at a non-letter boundary (start, "<",
+        # etc.) and carries the fewest prefix letters — real passport numbers
+        # are 1-2 letters, so a longer prefix here is usually merged OCR noise.
+        preceding_ok = dm.start() == 0 or not text[dm.start() - 1].isalpha()
+        key = (preceding_ok, -len(letters))
+        if best_key is None or key > best_key:
+            best_key, best_value = key, letters + digits
+    return best_value
+
+
+def _extract_document_number(compact):
+    """Pick the passport number (1-2 letters + 7 digits) from OCR text.
+
+    The MRZ line 2 places the document number immediately after line 1, so we
+    prefer a candidate found right after "P<IND". Only when no MRZ exists do we
+    fall back to a word-bounded search of the whole text.
+    """
+    upper_compact = compact.upper()
+    mitigated = _mitigate_ocr_noise(upper_compact)
+
+    mrz_pos = re.search(r"P<[A-Z]{3}", mitigated)
+    if mrz_pos:
+        window = mitigated[mrz_pos.end():mrz_pos.end() + 72]
+        from_mrz = _best_docnum_candidates(window)
+        if from_mrz:
+            return from_mrz
+
+    boundary = re.search(r"\b[A-Z]{1,2}[0-9]{7}\b", upper_compact)
+    if boundary and len(set(boundary.group(0)[-7:])) > 1:
+        return boundary.group(0)
+    return None
 
 
 def load_env():
@@ -104,35 +204,37 @@ def parse_passport_text(raw_text):
     falling back to the label-prefixed plain text otherwise.
     """
     fields = {}
+    compact = re.sub(r"\s+", "", raw_text)
 
-    # Document number: the familiar 2-letter + 7-digit passport number.
-    m = PASSPORT_RE.search(raw_text)
-    if m:
-        fields["DocumentNumber"] = {"value": m.group(0)}
+    # Document number: the familiar 1-2 letter + 7-digit passport number, e.g.
+    # "S7667070" or "AB9876543". OCR noise can insert gaps/`$`/`<` between the
+    # letters and digits, so the extraction tolerates and mitigates that noise.
+    docnum = _extract_document_number(compact)
+    if docnum:
+        fields["DocumentNumber"] = {"value": docnum}
 
     # Dates: try MRZ compact YYMMDD first (fixed, reliable field ordering).
     # Strip whitespace so OCR spacing inside the MRZ detail line doesn't break
-    # fixed-position extraction.
-    compact = re.sub(r"\s+", "", raw_text)
-    mrz = MRZ_RECORD_RE.search(compact)
-    dob = None
-    exp = None
+    # fixed-position extraction. When the MRZ decoding is not plausible (or
+    # absent), fall back to label-guided plain dates.
+    compact2 = compact
+    mrz = MRZ_RECORD_RE.search(compact2)
+    dob_candidates = []
+    exp_candidates = []
     if mrz:
-        _nat, dob, _g, exp, _ = mrz.groups()
-    else:
-        plain_dates = DATE_RE.findall(raw_text)
-        if len(plain_dates) >= 2:
-            dob, exp = plain_dates[0], plain_dates[1]
-        elif len(plain_dates) == 1:
-            dob = plain_dates[0]
+        _nat, dob_code, _g, exp_code = mrz.groups()
+        dob_candidates.append(normalize_date(dob_code))
+        exp_candidates.append(normalize_date(exp_code))
+    dob = _best_date(dob_candidates, raw_text, ["DATE OF BIRTH", "BIRTH DATE"])
+    exp = _best_date(exp_candidates, raw_text, ["DATE OF EXPIRY", "DATE OF EXPIRATION", "EXPIRY", "EXPIRES"])
 
     if dob:
-        fields["DateOfBirth"] = {"value": normalize_date(dob)}
+        fields["DateOfBirth"] = {"value": dob}
     if exp:
-        fields["DateOfExpiration"] = {"value": normalize_date(exp)}
+        fields["DateOfExpiration"] = {"value": exp}
 
     # Gender: single M/F/X from the MRZ sex field.
-    g = MRZ_GENDER_RE.search(compact)
+    g = MRZ_GENDER_RE.search(compact2)
     if g:
         fields["Gender"] = {"value": g.group(0)[-1]}
 

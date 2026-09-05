@@ -9,10 +9,10 @@
 // cannot be condemned as a forgery — it means we could not read the document,
 // so it becomes a soft note that pushes toward REVIEW, never a hard REJECT.
 
-// 1. Indian Passport Format Check (2 letters + 7 digits, e.g., AB1234567)
+// 1. Indian Passport Format Check (1-2 letters + 7 digits, e.g., Z1234567 / AB1234567)
 function validatePassportNumber(docNum) {
   if (!docNum) return "missing";
-  const indianPassportRegex = /^[A-Z]{2}\d{7}$/;
+  const indianPassportRegex = /^[A-Z]{1,2}\d{7}$/;
   return indianPassportRegex.test(docNum.trim()) ? "valid" : "invalid";
 }
 
@@ -130,15 +130,29 @@ function calculateRiskScore({ documentNumber, expiryDate, dob, gender, nationali
     (Math.min(tamperingFlagsCount, 100) * 0.40) +
     (Math.min(faceMismatchScore, 100) * 0.20);
 
-  // Unreadable fields are not defects, but they raise uncertainty: nudge the
-  // score toward REVIEW (floor at 31) so the document still appears for review
-  // rather than silently passing an unreadable document as APPROVE.
+  // Unreadable fields are not defects, but they raise uncertainty. Each
+  // unreadable field escalates the review floor by a step (31, 37, 43, 49, 55)
+  // instead of collapsing every partially-read document onto a flat 31, so
+  // partially legible documents produce distinct scores and still never
+  // silently APPROVE.
+  const missingPenalty = missingFields.length * 6;
   let finalRiskScore = Math.round(Math.min(rawScore, 100));
   if (missingFields.length > 0) {
-    finalRiskScore = Math.max(finalRiskScore, 31);
+    const reviewFloor = 25 + missingPenalty;
+    finalRiskScore = Math.max(finalRiskScore, reviewFloor);
     if (rawScore < 31) {
       flags.push("UNREADABLE_DOCUMENT_FIELDS");
     }
+  }
+
+  // A *readable but defective* document must also not auto-approve: an expired
+  // or blacklisted passport, an invalid document number, a tampered image, or
+  // a biometric mismatch all need a human — floor any such scan at REVIEW.
+  const hardDefect =
+    flags.some((f) => ["EXPIRED_DOCUMENT", "BLACKLISTED_DOCUMENT", "INVALID_PASSPORT_FORMAT", "LOW_FACE_MATCH_SCORE"].includes(f)) ||
+    tamperScore > 0;
+  if (hardDefect) {
+    finalRiskScore = Math.max(finalRiskScore, 31);
   }
 
   // --- Step 7: Verdict Assignment Logic ---

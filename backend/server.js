@@ -181,7 +181,7 @@ app.post("/api/scan/file",
       const documentNumber = body.documentNumber || ocrFields.DocumentNumber?.value;
       const expiryDate = body.expiryDate || ocrFields.DateOfExpiration?.value;
       const dob = body.dob || ocrFields.DateOfBirth?.value;
-      const gender = body.gender;
+      const gender = body.gender || ocrFields.Gender?.value;
       const nationality = body.nationality || ocrFields.CountryRegion?.value;
       const extractedData = { documentNumber, expiryDate, dob, gender, nationality };
 
