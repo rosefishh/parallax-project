@@ -81,6 +81,14 @@ export function apiBlobUrl(path: string): string {
 export function resolveApiUrl(path: string | null | undefined): string | null {
   if (!path) return null;
   if (/^https?:\/\//.test(path)) return path;
-  const origin = new URL(API_BASE_URL).origin;
+  const origin = (() => {
+    try {
+      return new URL(API_BASE_URL).origin;
+    } catch {
+      // API_BASE_URL is relative (e.g. "/api" via the dev proxy) — resolve against
+      // the page origin so the returned path is a working absolute URL.
+      return typeof window !== "undefined" ? window.location.origin : "";
+    }
+  })();
   return `${origin}${path.startsWith("/") ? path : `/${path}`}`;
 }
