@@ -73,6 +73,10 @@ export function SelfieCapture({
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    // Mirror the captured frame so the saved selfie matches the mirrored
+    // preview the user saw, consistent with phone selfie-camera behaviour.
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     canvas.toBlob((blob) => {
       if (blob) {
@@ -101,7 +105,10 @@ export function SelfieCapture({
       <div className="mt-3 overflow-hidden rounded-lg bg-black">
         <video
           ref={videoRef}
-          className={cn("aspect-[4/3] w-full object-cover", live ? "block" : "hidden")}
+          className={cn(
+            "aspect-[4/3] w-full -scale-x-100 object-cover",
+            live ? "block" : "hidden",
+          )}
           autoPlay
           muted
           playsInline
