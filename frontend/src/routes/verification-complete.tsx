@@ -4,6 +4,7 @@ import { Download, Flag, FlagOff, ShieldCheck, BatteryMedium, AlertTriangle } fr
 import { AppShell } from "@/components/AppShell";
 import { AsyncBoundary } from "@/components/AsyncState";
 import { fetchScan, reviewScan, downloadPdfReport, resolveApiUrl, formatDate } from "@/api";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/verification-complete")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -70,12 +71,14 @@ function VerificationComplete() {
 
 function ResultCard({ scanId }: { scanId: string }) {
   const queryClient = useQueryClient();
+  const { officer } = useAuth();
+  const officerName = officer?.name ?? "Officer";
   const scanQuery = useQuery({ queryKey: ["scan", scanId], queryFn: () => fetchScan(scanId) });
   const scan = scanQuery.data;
   if (!scan) return null;
 
   const reviewMutation = useMutation({
-    mutationFn: (flag: boolean) => reviewScan(scanId, flag),
+    mutationFn: (flag: boolean) => reviewScan(scanId, flag, officerName),
     onSuccess: (updated) => {
       queryClient.setQueryData(["scan", scanId], updated);
       queryClient.invalidateQueries({ queryKey: ["scans"] });

@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PlusCircle, Info, Search, Trash2, FileText } from "lucide-react";
 import { AppShell, PageTitle } from "@/components/AppShell";
 import { LoadingState, ErrorState, EmptyState } from "@/components/AsyncState";
+import { useAuth } from "@/lib/auth";
 import {
   fetchBlacklist,
   addBlacklistEntry,
@@ -33,6 +34,7 @@ export const Route = createFileRoute("/blacklist")({
 });
 
 function BlacklistAdmin() {
+  const { officer } = useAuth();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [number, setNumber] = useState("");
@@ -51,7 +53,7 @@ function BlacklistAdmin() {
       addBlacklistEntry({
         documentNumber: number,
         reason: reason || undefined,
-        addedBy: "Priyadarshani B.",
+        addedBy: officer?.name ?? "Officer",
         documentType: docType,
       }),
     onSuccess: () => {

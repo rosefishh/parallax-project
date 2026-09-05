@@ -16,6 +16,7 @@ import { AppShell } from "@/components/AppShell";
 import { VerdictBadge } from "@/components/VerdictBadge";
 import { AsyncBoundary } from "@/components/AsyncState";
 import { fetchStats, fetchRecentScans, formatDate, type ScanRecord } from "@/api";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
@@ -39,6 +40,8 @@ export const Route = createFileRoute("/dashboard")({
 const riskColors = ["var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)"];
 
 function Dashboard() {
+  const { officer } = useAuth();
+  const displayName = officer?.name ?? "Officer";
   const statsQuery = useQuery({ queryKey: ["stats"], queryFn: fetchStats });
   const scansQuery = useQuery({ queryKey: ["scans", "recent"], queryFn: () => fetchRecentScans(100) });
 
@@ -67,7 +70,7 @@ function Dashboard() {
   return (
     <AppShell>
       <div className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">Welcome back, Priyadarshani Basu.</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Welcome back, {displayName}.</h1>
         <p className="text-xs text-muted-foreground">
           सत्यापन पर आपका स्वागत है — आगे का सारांश नीचे
         </p>

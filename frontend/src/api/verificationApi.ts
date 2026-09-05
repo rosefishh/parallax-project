@@ -10,8 +10,8 @@ export async function fetchScan(id: string): Promise<ScanRecord> {
   return res.data;
 }
 
-export async function reviewScan(id: string, flag: boolean): Promise<ScanRecord> {
-  const res = await apiPost<ApiSuccess<ScanRecord>>(`/scans/${id}/review`, { flag });
+export async function reviewScan(id: string, flag: boolean, actor?: string): Promise<ScanRecord> {
+  const res = await apiPost<ApiSuccess<ScanRecord>>(`/scans/${id}/review`, { flag, actor });
   return res.data;
 }
 

@@ -39,7 +39,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { dark, setDark } = useDarkMode();
   const { officer, signOut } = useAuth();
-  const displayName = officer?.name ?? "Priyadarshani Basu";
+  const displayName = officer?.name ?? "Officer";
   const initials = displayName
     .split(/\s+/)
     .filter(Boolean)
@@ -118,7 +118,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
           <div className="flex items-center gap-2 rounded-full bg-muted py-1 pl-1 pr-3">
             <span className="flex size-7 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
-              {initials || "PB"}
+              {initials || "OF"}
             </span>
             <span className="hidden max-w-[10rem] truncate text-sm font-medium sm:block">
               {displayName}

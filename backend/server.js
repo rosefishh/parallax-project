@@ -558,7 +558,7 @@ app.post("/api/scans/:id/review", async (req, res) => {
       data: {
         needsReview: flag,
         reviewedAt: new Date(),
-        reviewedBy: req.body?.actor || "Priyadarshani B."
+        reviewedBy: req.body?.actor || null,
       }
     });
 
