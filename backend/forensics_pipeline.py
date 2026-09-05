@@ -20,28 +20,122 @@ MODEL_PATH = os.path.join(BASE_DIR, "python_api", "models", "face_detection_yune
 
 PASSPORT_RE = re.compile(r"[A-Z]{2}[0-9]{7}")
 DATE_RE = re.compile(r"\b\d{2}[/\.-]\d{2}[/\.-]\d{4}\b")
+# Machine Readable Zone (MRZ) detail line: ...<6IND9001155M3112317<<...
+# Layout (line 2): <DOCNO><check><NAT3><DOB6><check><SEX1><EXP6><check>...
+# so DOB (YYMMDD) is 6 digits after the 3-letter nationality, followed by a
+# check digit, the single sex char, then EXP (YYMMDD) and a check digit.
+MRZ_RECORD_RE = re.compile(r"([A-Z]{3})(\d{6})\d([MFX])(\d{6})\d")
+MRZ_GENDER_RE = re.compile(r"\d{6}[MFX]")
+def normalize_date(value):
+    """Return an unambiguous YYYY-MM-DD string from DD-MM-YYYY or YYMMDD input."""
+    if not value:
+        return None
+    value = value.strip()
+    if len(value) == 6 and value.isdigit():
+        # MRZ compact YYMMDD
+        yy, mm, dd = value[:2], value[2:4], value[4:6]
+        year = 2000 + int(yy) if int(yy) <= 49 else 1900 + int(yy)
+        try:
+            import datetime
+            return datetime.date(year, int(mm), int(dd)).isoformat()
+        except (ValueError, TypeError):
+            return None
+    parts = re.split(r"[/\.-]", value)
+    if len(parts) == 3 and len(parts[2]) == 4:
+        dd, mm, yyyy = parts
+        try:
+            import datetime
+            return datetime.date(int(yyyy), int(mm), int(dd)).isoformat()
+        except (ValueError, TypeError):
+            return None
+    return value
 
 
 def load_env():
-    """Load backend/.env so TESSERACT_CMD etc. resolve regardless of cwd."""
+    """Load backend/.env so TESSERACT_CMD etc. resolve regardless of cwd.
+
+    Prefers python-dotenv when installed, otherwise falls back to a tiny
+    hand-rolled parser so the pipeline never depends on dotenv being present.
+    """
     try:
         from dotenv import load_dotenv
         load_dotenv(ENV_PATH, override=False)
     except ImportError:
-        pass
+        try:
+            with open(ENV_PATH, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, _, value = line.partition("=")
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")
+                    if key and key not in os.environ:
+                        os.environ[key] = value
+        except OSError:
+            pass
+
+
+def _configure_tesseract():
+    """Point pytesseract at a real tesseract binary, with sane defaults."""
+    import os as _os
+    candidates = []
+    env_cmd = _os.environ.get("TESSERACT_CMD")
+    if env_cmd:
+        candidates.append(env_cmd)
+    # Common Windows install locations when TESSERACT_CMD is unset.
+    candidates.extend([
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        r"C:\Tesseract-OCR\tesseract.exe",
+    ])
+    for c in candidates:
+        if c and _os.path.exists(c):
+            import pytesseract
+            pytesseract.pytesseract.tesseract_cmd = c
+            return True
+    return False
 
 
 def parse_passport_text(raw_text):
-    """Extracts structured passport fields from raw OCR text via regex."""
+    """Extracts structured passport fields from raw OCR text via regex.
+
+    Prefers the Machine Readable Zone (MRZ) for dates/gender when present,
+    falling back to the label-prefixed plain text otherwise.
+    """
     fields = {}
+
+    # Document number: the familiar 2-letter + 7-digit passport number.
     m = PASSPORT_RE.search(raw_text)
     if m:
         fields["DocumentNumber"] = {"value": m.group(0)}
-    dates = DATE_RE.findall(raw_text)
-    if len(dates) >= 1:
-        fields["DateOfBirth"] = {"value": dates[0]}
-    if len(dates) >= 2:
-        fields["DateOfExpiration"] = {"value": dates[1]}
+
+    # Dates: try MRZ compact YYMMDD first (fixed, reliable field ordering).
+    # Strip whitespace so OCR spacing inside the MRZ detail line doesn't break
+    # fixed-position extraction.
+    compact = re.sub(r"\s+", "", raw_text)
+    mrz = MRZ_RECORD_RE.search(compact)
+    dob = None
+    exp = None
+    if mrz:
+        _nat, dob, _g, exp, _ = mrz.groups()
+    else:
+        plain_dates = DATE_RE.findall(raw_text)
+        if len(plain_dates) >= 2:
+            dob, exp = plain_dates[0], plain_dates[1]
+        elif len(plain_dates) == 1:
+            dob = plain_dates[0]
+
+    if dob:
+        fields["DateOfBirth"] = {"value": normalize_date(dob)}
+    if exp:
+        fields["DateOfExpiration"] = {"value": normalize_date(exp)}
+
+    # Gender: single M/F/X from the MRZ sex field.
+    g = MRZ_GENDER_RE.search(compact)
+    if g:
+        fields["Gender"] = {"value": g.group(0)[-1]}
+
     if "IND" in raw_text or "INDIA" in raw_text:
         fields["CountryRegion"] = {"value": "IND"}
     return fields
@@ -54,9 +148,7 @@ def run_ocr(image_path):
         import numpy as np
         import pytesseract
 
-        cmd = os.environ.get("TESSERACT_CMD")
-        if cmd and os.path.exists(cmd):
-            pytesseract.pytesseract.tesseract_cmd = cmd
+        _configure_tesseract()
 
         img = cv2.imread(image_path)
         if img is None:
@@ -121,7 +213,7 @@ def run_ai_detection(image_path, img_color=None):
         mask = (x - center_w) ** 2 + (y - center_h) ** 2 > radius ** 2
         high_freq_power = np.mean(magnitude_spectrum[mask])
 
-        if high_freq_power > 165 or high_freq_power < 70:
+        if high_freq_power > 250 or high_freq_power < 55:
             ai_score += 45
             flags.append("SYNTHETIC_FREQUENCY_SPECTRUM_ANOMALY")
             # Highlight the high-frequency (outer) ring region presumed synthetic.
@@ -164,19 +256,38 @@ def run_tamper_detection(image_path, img_color=None):
         tamper_score = 0
         flags = []
 
+        # Edge-discontinuity / photo-cut heuristic. A large rectangular contour
+        # is usually just the document frame against the background, not proof
+        # of a cut — the old heuristic wrongly flagged nearly every valid
+        # scanned document. A genuine pasted/edited region shows up as a large
+        # interior contour AND a smoothing/no-seam artifact, so we only suspect
+        # a cut when BOTH signals are present.
+        laplacian_var = cv2.Laplacian(img_gray, cv2.CV_64F).var()
+        smoothing_present = laplacian_var < 30.0
+
+        img_h, img_w = img_gray.shape[:2]
+        frame_area = img_h * img_w
         edges = cv2.Canny(img_gray, 100, 200)
         contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         for cnt in contours:
             x, y, w, h = cv2.boundingRect(cnt)
-            if w > 50 and h > 50 and (w * h) > 2500:
+            area = w * h
+            # Must be large AND fully interior (a pasted region sits inside the
+            # outer frame) AND show smoothing/noise-deficiency — never just an
+            # ordinary document outline.
+            border_inset = 12
+            interior = (x >= border_inset and y >= border_inset
+                        and x + w <= img_w - border_inset and y + h <= img_h - border_inset)
+            if area >= frame_area * 0.25 and interior and smoothing_present:
                 tamper_score += 40
                 flags.append("HIGH_EDGE_DISCONTINUITY_POSSIBLE_PHOTO_CUT")
                 tamper_boxes.append((x, y, w, h))
                 if tamper_score >= 40:
                     break
 
-        laplacian_var = cv2.Laplacian(img_gray, cv2.CV_64F).var()
-        if laplacian_var < 50.0:
+        # Over-processed / smoothed-out scans remain a (now softened) signal,
+        # raised from the old 50.0 so clean photographs no longer false-positive.
+        if laplacian_var < 30.0:
             tamper_score += 30
             flags.append("BLURRY_TEXT_OR_UNNATURAL_SMOOTHING")
             banner_flags.append("UNNATURAL SMOOTHING / BLUR DETECTED")

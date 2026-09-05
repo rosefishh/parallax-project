@@ -7,7 +7,7 @@ Passport forensic & verification system built for **Smart India Hackathon (SIH 2
 A **Node.js gateway** owns the API, business logic, database, and PDF certificates. A **Python forensic engine** handles all computer-vision work (OCR, AI detection, tamper detection, face matching). Node shell-calls Python as subprocesses, so a single upload produces a complete verdict.
 
 ```
-Frontend (Next.js, port 3000)
+Frontend (Vite + React + TanStack Router, port 3000)
       |
       |  POST /api/scan/file   (multipart: document + optional selfie)
       v
@@ -15,8 +15,8 @@ Node.js Gateway (port 5000)
    Express + Prisma + Multer + PDFKit
       |  exec: forensics_pipeline.py
       v
-Python Forensic Engine (port 8000)
-   FastAPI + OpenCV + Tesseract + YuNet
+Python Forensic Engine
+   OpenCV + Tesseract + YuNet
       |  OCR -> AI detect -> tamper detect -> face match
       v
 Risk Engine (rules.js) -> verdict + flags -> Supabase (PostgreSQL)
@@ -27,23 +27,27 @@ Risk Engine (rules.js) -> verdict + flags -> Supabase (PostgreSQL)
 | Layer | Technology |
 |---|---|
 | Gateway API | Node.js, Express 4, Multer, PDFKit, Prisma 5 |
-| Forensic engine | Python 3, FastAPI, Uvicorn, Pydantic 2 |
-| Vision / OCR | OpenCV, Tesseract 5 + pytesseract, NumPy, Pillow |
+| Forensic engine | Python 3, OpenCV, Tesseract 5 + pytesseract, NumPy, Pillow |
+| Vision / OCR | OpenCV + Tesseract (CLI-driven single-pass pipeline) |
 | Face detection | YuNet DNN (ONNX) + histogram matching |
 | Database | PostgreSQL on Supabase (Prisma models: `Scan`, `Blacklist`) |
-| Frontend | Next.js 14, React 18, TypeScript 5 (scaffold) |
+| Frontend | Vite, React 18, TypeScript 5, TanStack Router + Query, Tailwind 4 |
 
 ## Features
 
 - **Document scanning** — upload a passport image (or PDF) and get a verdict in one call
-- **OCR field extraction** — Tesseract extracts doc number, dates, and nationality
+- **OCR field extraction** — Tesseract extracts doc number, dates, gender, and nationality, with **MRZ (machine-readable zone) parsing** preferred over plain text when available
 - **AI-image detection** — FFT spectral analysis + texture regularity
-- **Tamper detection** — photo-cut/edge-discontinuity + blur/smoothing analysis
-- **Face verification** — document face vs. live selfie (YuNet + histogram)
+- **Tamper detection** — photo-cut/edge-discontinuity (combined-signal) + blur/smoothing analysis
+- **Face verification** — document face vs. live selfie (YuNet + histogram), with **live webcam capture and selfie upload** on the frontend
 - **Blacklist lookup** — against the DB watchlist
-- **Risk engine & explainable verdicts** — weighted 40/40/20 scoring
+- **Risk engine & explainable verdicts** — weighted 40/40/20 scoring with **unreadable-vs-invalid field handling**
 - **Scan history** — filterable + paginated, with statistics
 - **PDF audit certificate** — downloadable verification report per scan
+- **Reports** — "Generate Report" (Verification Summary / Risk Analysis / Blacklist Activity / Verification History) now lives in **Settings**, replacing the removed standalone Reports page
+- **Authentication** — login / signup flow powering the dashboard
+- **Dark mode** — theme toggle persisted across sessions
+- **Audit trail & landing page** — polished home page and audit log view
 
 ## Project Structure
 
@@ -56,13 +60,14 @@ parallax-project/
 │   ├── ai_detector.py        # Standalone AI-image detector
 │   ├── tamper_detector.py    # Standalone tampering detector
 │   ├── prisma/schema.prisma  # Scan + Blacklist models
-│   └── python_api/           # FastAPI forensic engine (port 8000)
-│       ├── main.py           # FastAPI app (OCR / face / upload)
-│       ├── routers/          # ocr | face | upload
-│       ├── services/         # ocr | face | request validation | storage
-│       ├── models/           # YuNet ONNX face-detection model
-│       └── testdata/         # Sample faces for tests
-└── frontend/                 # Next.js 14 scaffold
+│   └── python_api/           # Legacy FastAPI engine + YuNet ONNX model + testdata
+└── frontend/                 # Vite + React + TanStack Router (port 3000)
+    └── src/
+        ├── routes/           # login, signup, dashboard, new-verification,
+        │                     #   screening, verification-complete, history,
+        │                     #   blacklist, audit-trail, settings, home
+        ├── components/       # AppShell, GenerateReport, SelfieCapture, AsyncState
+        └── lib/              # auth, theme, pendingScan, api
 ```
 
 ## Prerequisites
@@ -104,11 +109,11 @@ npx prisma migrate deploy   # or: npx prisma db push
 
 ### 3. Python forensic engine
 
+The Node gateway runs the Python pipeline as a subprocess, so it only needs the Python packages used by the pipeline to be installed in the interpreter named by `FORENSICS_PYTHON`:
+
 ```bash
-cd backend/python_api
-python -m venv .venv                          # optional but recommended
-.venv/Scripts/activate                        # Windows
-pip install -r requirements.txt
+cd backend
+python -m pip install opencv-python numpy pillow pytesseract
 ```
 
 Install Tesseract if not present:
@@ -121,24 +126,19 @@ brew install tesseract          # macOS
 sudo apt install tesseract-ocr  # Debian/Ubuntu
 ```
 
+> `forensics_pipeline.py` auto-detects the common Tesseract install paths and also parses `backend/.env` for `TESSERACT_CMD` even if `python-dotenv` is not installed.
+
 ### 4. Run the servers
 
 ```bash
-# Terminal 1 - Node gateway (port 5000)
+# Terminal 1 - Node gateway (port 5000) — spawns Python forensic subprocesses
 cd backend
 npm run dev          # or: node server.js
 
-# Terminal 2 - Python engine (port 8000)
-cd backend/python_api
-uvicorn main:app --reload
-```
-
-### 5. Frontend (optional)
-
-```bash
+# Terminal 2 - Frontend (port 3000)
 cd frontend
 npm install
-npm run dev          # http://localhost:3000
+npm run dev
 ```
 
 ## API Reference
@@ -178,21 +178,27 @@ Response shape:
     "verdict": "REVIEW",
     "riskScore": 34,
     "faceScore": 1.0,
-    "extractedData": { "...": "..." },
-    "tamperingFlags": ["..."],
-    "forensics": { "ocr": {}, "ai": {}, "tamper": {}, "face": {} }
+    "extractedData": { "documentNumber": "AB1234567", "expiryDate": "2031-12-31", "dob": "1990-01-15", "gender": "M", "nationality": "IND" },
+    "tamperingFlags": ["UNREADABLE_DOCUMENT_FIELDS"],
+    "missingFields": ["Gender"],
+    "evidenceImageUrl": "/uploads/..._annotated.png",
+    "forensics": { "ocr": {}, "ai": {}, "tamper": {}, "face": { "face_score": 100, "matched": true, "skipped": true, "details": "Selfie omitted..." } }
   }
 }
 ```
 
-### Python forensic engine (`http://localhost:8000`)
+The `face` block reflects face-match results: when a `selfie` was uploaded, `skipped` is `false` and `face_score`/`matched` hold the real comparison; without a selfie it is `skipped: true, face_score: 100` (face-match effectively not performed).
 
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/api/ocr/extract` | Tesseract OCR on an image (`file`) |
-| POST | `/api/face/verify` | Face match (`document` + `selfie`) |
-| POST | `/api/upload/file` | Validate + store a file |
-| GET | `/api/health` | Service status |
+### Python forensic engine
+
+Run directly to see the raw forensic breakdown:
+
+```bash
+cd backend
+python forensics_pipeline.py --document /path/to/doc.jpg [--selfie /path/to/selfie.jpg]
+```
+
+Returns a single JSON payload with `ocr`, `ai`, `tamper`, and `face` blocks. A legacy FastAPI server also exists under `python_api/` (OCR, face-verify, upload + health routes) for standalone use.
 
 ## How the Risk Score Works
 
@@ -210,28 +216,33 @@ Verdict thresholds:
 | 31 – 60 | REVIEW |
 | 61 – 100 | REJECT |
 
+**Validation is tri-state.** Each field (passport number, expiry, DOB, gender, nationality) is judged as:
+
+- **valid** — present and passes its rule
+- **invalid** — present but fails its rule (e.g. expired date) → a hard 20-point validation error and a flag
+- **missing** — not readable/supplied by OCR → *not* treated as a defect; instead the document is nudged toward **REVIEW** (score floor 31) with an `UNREADABLE_DOCUMENT_FIELDS` flag so an unreadable document is flagged for a human rather than silently approved or wrongly rejected
+
+Missing fields are also reported in the response's `missingFields` array.
+
 Validation rules: Indian passport format (`^[A-Z]{2}[0-9]{7}$`), expiration in the future, age >= 18 at DOB, gender code (M/F/X), nationality IND.
 
 ## Testing
 
 ```bash
-# Node gateway: 13-requirement acceptance suite
+# Node gateway: acceptance suite
 cd backend
 node test_all_requirements.js
 
-# Python services + OCR diagnostics
-cd backend/python_api
-.venv/Scripts/python.exe testpipeline.py
-
-# Face matching sanity test (same vs different person)
-.venv/Scripts/python.exe test_face.py
+# Python pipeline syntax / OCR diagnostics (uses backend/.env Tesseract config)
+cd backend
+python forensics_pipeline.py --document python_api/testdata/lena.jpg
 ```
 
 ## Known Limitations
 
 - **Face matching is histogram-based** — color-distribution similarity, not production-grade biometric recognition. Suitable for demos/hackathons.
-- **OCR accuracy** depends on image quality; machine-readable-zone (MRZ) parsing is not implemented.
-- Python `history`, `blacklist`, and `validation` were intentionally consolidated into the Node gateway — the FastAPI service serves forensics only.
+- **OCR accuracy** depends on image quality; MRZ parsing is implemented and preferred, but a poor/angled photo can still yield unreadable fields (surfaced as `UNREADABLE_DOCUMENT_FIELDS` rather than a false defect).
+- Python `history`, `blacklist`, and `validation` were consolidated into the Node gateway — forensics run as a subprocess pipeline.
 
 ## License
 

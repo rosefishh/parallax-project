@@ -7,6 +7,7 @@ export type PendingScan = {
   file: File;
   documentType: string;
   faceMatch: boolean;
+  selfie?: File | null;
 };
 
 export function setPendingScan(scan: PendingScan) {

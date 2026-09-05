@@ -144,11 +144,20 @@ function AuditTrailPage() {
               <tbody>
                 {events.map((row) => (
                   <tr key={row.id} className="border-b border-border/60 last:border-0">
-                    <td className="whitespace-nowrap py-3 pr-4 font-mono text-xs font-semibold text-primary">
+                    <td className="whitespace-nowrap py-3 pr-4 text-sm text-foreground tabular-nums">
                       <span className="flex items-center gap-1.5">
-                        {row.resource === "LOG_IN" && <LogIn className="size-3.5" />}
-                        {row.resource === "REPORT" && <ScrollText className="size-3.5" />}
+                        {row.resource === "LOG_IN" && <LogIn className="size-3.5 text-muted-foreground" />}
+                        {row.resource === "REPORT" && <ScrollText className="size-3.5 text-muted-foreground" />}
                         {formatDate(row.createdAt)}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        {new Date(row.createdAt).toLocaleString("en-US", {
+                          timeZone: "UTC",
+                          hour12: true,
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          timeZoneName: "short",
+                        })}
                       </span>
                     </td>
                     <td className="py-3 pr-4 font-medium">{row.actor ?? "system@identra"}</td>

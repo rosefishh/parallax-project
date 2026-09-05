@@ -12,11 +12,14 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuditTrailRouteImport } from './routes/audit-trail'
 import { Route as BlacklistRouteImport } from './routes/blacklist'
+import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as IdentraAiRouteImport } from './routes/identra-ai'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as NewVerificationRouteImport } from './routes/new-verification'
 import { Route as ScreeningRouteImport } from './routes/screening'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SignupRouteImport } from './routes/signup'
 import { Route as VerificationCompleteRouteImport } from './routes/verification-complete'
 
 const IndexRoute = IndexRouteImport.update({
@@ -34,6 +37,11 @@ const BlacklistRoute = BlacklistRouteImport.update({
   path: '/blacklist',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HistoryRoute = HistoryRouteImport.update({
   id: '/history',
   path: '/history',
@@ -42,6 +50,11 @@ const HistoryRoute = HistoryRouteImport.update({
 const IdentraAiRoute = IdentraAiRouteImport.update({
   id: '/identra-ai',
   path: '/identra-ai',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NewVerificationRoute = NewVerificationRouteImport.update({
@@ -59,6 +72,11 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VerificationCompleteRoute = VerificationCompleteRouteImport.update({
   id: '/verification-complete',
   path: '/verification-complete',
@@ -69,22 +87,28 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/audit-trail': typeof AuditTrailRoute
   '/blacklist': typeof BlacklistRoute
+  '/dashboard': typeof DashboardRoute
   '/history': typeof HistoryRoute
   '/identra-ai': typeof IdentraAiRoute
+  '/login': typeof LoginRoute
   '/new-verification': typeof NewVerificationRoute
   '/screening': typeof ScreeningRoute
   '/settings': typeof SettingsRoute
+  '/signup': typeof SignupRoute
   '/verification-complete': typeof VerificationCompleteRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/audit-trail': typeof AuditTrailRoute
   '/blacklist': typeof BlacklistRoute
+  '/dashboard': typeof DashboardRoute
   '/history': typeof HistoryRoute
   '/identra-ai': typeof IdentraAiRoute
+  '/login': typeof LoginRoute
   '/new-verification': typeof NewVerificationRoute
   '/screening': typeof ScreeningRoute
   '/settings': typeof SettingsRoute
+  '/signup': typeof SignupRoute
   '/verification-complete': typeof VerificationCompleteRoute
 }
 export interface FileRoutesById {
@@ -92,11 +116,14 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/audit-trail': typeof AuditTrailRoute
   '/blacklist': typeof BlacklistRoute
+  '/dashboard': typeof DashboardRoute
   '/history': typeof HistoryRoute
   '/identra-ai': typeof IdentraAiRoute
+  '/login': typeof LoginRoute
   '/new-verification': typeof NewVerificationRoute
   '/screening': typeof ScreeningRoute
   '/settings': typeof SettingsRoute
+  '/signup': typeof SignupRoute
   '/verification-complete': typeof VerificationCompleteRoute
 }
 export interface FileRouteTypes {
@@ -105,33 +132,42 @@ export interface FileRouteTypes {
     | '/'
     | '/audit-trail'
     | '/blacklist'
+    | '/dashboard'
     | '/history'
     | '/identra-ai'
+    | '/login'
     | '/new-verification'
     | '/screening'
     | '/settings'
+    | '/signup'
     | '/verification-complete'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/audit-trail'
     | '/blacklist'
+    | '/dashboard'
     | '/history'
     | '/identra-ai'
+    | '/login'
     | '/new-verification'
     | '/screening'
     | '/settings'
+    | '/signup'
     | '/verification-complete'
   id:
     | '__root__'
     | '/'
     | '/audit-trail'
     | '/blacklist'
+    | '/dashboard'
     | '/history'
     | '/identra-ai'
+    | '/login'
     | '/new-verification'
     | '/screening'
     | '/settings'
+    | '/signup'
     | '/verification-complete'
   fileRoutesById: FileRoutesById
 }
@@ -139,11 +175,14 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuditTrailRoute: typeof AuditTrailRoute
   BlacklistRoute: typeof BlacklistRoute
+  DashboardRoute: typeof DashboardRoute
   HistoryRoute: typeof HistoryRoute
   IdentraAiRoute: typeof IdentraAiRoute
+  LoginRoute: typeof LoginRoute
   NewVerificationRoute: typeof NewVerificationRoute
   ScreeningRoute: typeof ScreeningRoute
   SettingsRoute: typeof SettingsRoute
+  SignupRoute: typeof SignupRoute
   VerificationCompleteRoute: typeof VerificationCompleteRoute
 }
 
@@ -170,6 +209,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BlacklistRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/history': {
       id: '/history'
       path: '/history'
@@ -182,6 +228,13 @@ declare module '@tanstack/react-router' {
       path: '/identra-ai'
       fullPath: '/identra-ai'
       preLoaderRoute: typeof IdentraAiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/new-verification': {
@@ -205,6 +258,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/verification-complete': {
       id: '/verification-complete'
       path: '/verification-complete'
@@ -219,11 +279,14 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuditTrailRoute: AuditTrailRoute,
   BlacklistRoute: BlacklistRoute,
+  DashboardRoute: DashboardRoute,
   HistoryRoute: HistoryRoute,
   IdentraAiRoute: IdentraAiRoute,
+  LoginRoute: LoginRoute,
   NewVerificationRoute: NewVerificationRoute,
   ScreeningRoute: ScreeningRoute,
   SettingsRoute: SettingsRoute,
+  SignupRoute: SignupRoute,
   VerificationCompleteRoute: VerificationCompleteRoute,
 }
 export const routeTree = rootRouteImport

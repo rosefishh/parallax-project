@@ -92,6 +92,12 @@ function ResultCard({ scanId }: { scanId: string }) {
   const okVerdict = scan.verdict === "APPROVE";
   const reviewVerdict = scan.verdict === "REVIEW";
 
+  const forensics = (scan as unknown as { forensics?: { face?: { matched?: boolean; skipped?: boolean; face_score?: number; faceScore?: number; details?: string } } }).forensics;
+  const faceInfo = forensics?.face;
+  const faceMatched = faceInfo?.matched ?? scan.faceScore >= 0.65;
+  const faceSkipped = faceInfo?.skipped ?? (scan.faceScore >= 0.99 && !faceInfo);
+  const facePercent = Math.round((faceInfo?.face_score ?? faceInfo?.faceScore ?? scan.faceScore * 100) );
+
   const curated = [
     ["Verification ID", scan.id.slice(0, 8)],
     ["Document Type", String(scan.documentType ?? "Passport")],
@@ -105,7 +111,11 @@ function ResultCard({ scanId }: { scanId: string }) {
 
   const findings = [
     { label: "Document Validation", value: (validation.passportFormatValid ?? false) ? "Passed" : "Failed" },
-    { label: "Face Match", value: `${Math.round(scan.faceScore * 100)}% Match` },
+    {
+      label: "Face Match",
+      value: faceSkipped ? "Not Performed" : faceMatched ? `${facePercent}% Match` : `${facePercent}% Mismatch`,
+      failed: !faceSkipped && !faceMatched,
+    },
     {
       label: "Blacklist Status",
       value: validation.isBlacklisted ? "Flagged" : "Clear",

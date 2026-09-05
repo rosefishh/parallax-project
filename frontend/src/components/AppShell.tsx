@@ -12,12 +12,16 @@ import {
   Sun,
   Bell,
   ShieldCheck,
+  LogOut,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/lib/theme";
+import { useAuth } from "@/lib/auth";
 
 const nav = [
-  { to: "/", label: "Dashboard", hi: "डैशबोर्ड", icon: LayoutDashboard },
+  { to: "/", label: "Home", hi: "होम", icon: Sparkles },
+  { to: "/dashboard", label: "Dashboard", hi: "डैशबोर्ड", icon: LayoutDashboard },
   { to: "/new-verification", label: "New Verification", hi: "नया सत्यापन", icon: FilePlus2 },
   { to: "/identra-ai", label: "Identra AI", hi: "इंद्र एआई", icon: Sparkles },
   { to: "/history", label: "History", hi: "इतिहास", icon: History },
@@ -27,16 +31,21 @@ const nav = [
 ] as const;
 
 export function useDarkMode() {
-  const [dark, setDark] = useState(false);
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", dark);
-  }, [dark]);
-  return { dark, setDark };
+  const { theme, setTheme } = useTheme();
+  return { dark: theme === "dark", setDark: (dark: boolean) => setTheme(dark ? "dark" : "light") };
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { dark, setDark } = useDarkMode();
+  const { officer, signOut } = useAuth();
+  const displayName = officer?.name ?? "Priyadarshani Basu";
+  const initials = displayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase())
+    .join("");
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -84,7 +93,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
       </aside>
 
-      <div className="flex min-h-screen flex-1 flex-col md:pl-64">
+      <div className="flex min-h-screen w-full min-w-0 flex-1 flex-col md:pl-64">
         <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-background/85 px-4 py-3 backdrop-blur md:px-8">
           <div className="relative flex-1 max-w-3xl">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -109,13 +118,23 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
           <div className="flex items-center gap-2 rounded-full bg-muted py-1 pl-1 pr-3">
             <span className="flex size-7 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
-              PB
+              {initials || "PB"}
             </span>
-            <span className="hidden text-sm font-medium sm:block">Priyadarshani Basu</span>
+            <span className="hidden max-w-[10rem] truncate text-sm font-medium sm:block">
+              {displayName}
+            </span>
+            <button
+              onClick={signOut}
+              aria-label="Sign out"
+              title="Sign out"
+              className="text-muted-foreground transition-colors hover:text-destructive"
+            >
+              <LogOut className="size-4" />
+            </button>
           </div>
         </header>
 
-        <main className="flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
+        <main className="min-w-0 flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
       </div>
     </div>
   );

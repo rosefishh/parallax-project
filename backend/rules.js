@@ -1,26 +1,34 @@
 // ==========================================
 // STEP 4: INDIVIDUAL VALIDATION RULES
 // ==========================================
+// Each rule returns a tri-state status:
+//   "valid"   - value present and passes the check
+//   "invalid" - value present but fails the check (real defect)
+//   "missing" - value not readable/supplied (OCR or client gave nothing)
+// The risk engine treats only "invalid" as a hard defect. A "missing" field
+// cannot be condemned as a forgery — it means we could not read the document,
+// so it becomes a soft note that pushes toward REVIEW, never a hard REJECT.
 
 // 1. Indian Passport Format Check (2 letters + 7 digits, e.g., AB1234567)
 function validatePassportNumber(docNum) {
-  if (!docNum) return false;
+  if (!docNum) return "missing";
   const indianPassportRegex = /^[A-Z]{2}\d{7}$/;
-  return indianPassportRegex.test(docNum.trim());
+  return indianPassportRegex.test(docNum.trim()) ? "valid" : "invalid";
 }
 
 // 2. Expiration Date Check (Must be in the future)
 function validateExpiryDate(expiryDate) {
-  if (!expiryDate) return false;
+  if (!expiryDate) return "missing";
   const expiry = new Date(expiryDate);
-  const today = new Date();
-  return expiry > today;
+  if (isNaN(expiry.getTime())) return "invalid";
+  return expiry > new Date() ? "valid" : "invalid";
 }
 
 // 3. Date of Birth Check (Must be at least 18 years old)
 function validateDOB(dob) {
-  if (!dob) return false;
+  if (!dob) return "missing";
   const birthDate = new Date(dob);
+  if (isNaN(birthDate.getTime())) return "invalid";
   const today = new Date();
   let age = today.getFullYear() - birthDate.getFullYear();
   const monthDiff = today.getMonth() - birthDate.getMonth();
@@ -28,20 +36,20 @@ function validateDOB(dob) {
   if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
     age--;
   }
-  return age >= 18;
+  return age >= 18 ? "valid" : "invalid";
 }
 
 // 4. Gender Code Check (M, F, X)
 function validateGender(gender) {
-  if (!gender) return false;
+  if (!gender) return "missing";
   const validGenders = ["M", "F", "X"];
-  return validGenders.includes(gender.toUpperCase());
+  return validGenders.includes(gender.toUpperCase()) ? "valid" : "invalid";
 }
 
 // 5. Nationality Code Check (IND)
 function validateNationality(nationality) {
-  if (!nationality) return false;
-  return nationality.toUpperCase() === "IND";
+  if (!nationality) return "missing";
+  return nationality.toUpperCase() === "IND" ? "valid" : "invalid";
 }
 
 // ==========================================
@@ -53,31 +61,48 @@ function calculateRiskScore({ documentNumber, expiryDate, dob, gender, nationali
   let tamperingFlagsCount = 0;
   let faceMismatchScore = 0;
   const flags = [];
+  const missingFields = [];
+
+  const passportNum = validatePassportNumber(documentNumber);
+  const expiry = validateExpiryDate(expiryDate);
+  const birth = validateDOB(dob);
+  const gen = validateGender(gender);
+  const nat = validateNationality(nationality);
 
   // --- Category 1: Validation Rules (40% Weight Category) ---
-  if (!validatePassportNumber(documentNumber)) {
+  if (passportNum === "invalid") {
     validationErrors += 20;
     flags.push("INVALID_PASSPORT_FORMAT");
+  } else if (passportNum === "missing") {
+    missingFields.push("Passport Number");
   }
 
-  if (!validateExpiryDate(expiryDate)) {
+  if (expiry === "invalid") {
     validationErrors += 20;
     flags.push("EXPIRED_DOCUMENT");
+  } else if (expiry === "missing") {
+    missingFields.push("Expiry Date");
   }
 
-  if (!validateDOB(dob)) {
+  if (birth === "invalid") {
     validationErrors += 20;
     flags.push("UNDERAGE_OR_INVALID_DOB");
+  } else if (birth === "missing") {
+    missingFields.push("Date of Birth");
   }
 
-  if (!validateGender(gender)) {
+  if (gen === "invalid") {
     validationErrors += 20;
     flags.push("INVALID_GENDER_CODE");
+  } else if (gen === "missing") {
+    missingFields.push("Gender");
   }
 
-  if (!validateNationality(nationality)) {
+  if (nat === "invalid") {
     validationErrors += 20;
     flags.push("UNSUPPORTED_NATIONALITY");
+  } else if (nat === "missing") {
+    missingFields.push("Nationality");
   }
 
   // --- Category 2: Blacklist + Forensic/Tamper Check (40% Weight Category) ---
@@ -100,12 +125,21 @@ function calculateRiskScore({ documentNumber, expiryDate, dob, gender, nationali
 
   // --- Weighted Risk Calculation Formula ---
   // (Validation Errors × 40%) + (Tampering/Blacklist × 40%) + (Face Mismatch × 20%)
-  const rawScore = 
+  const rawScore =
     (Math.min(validationErrors, 100) * 0.40) +
     (Math.min(tamperingFlagsCount, 100) * 0.40) +
     (Math.min(faceMismatchScore, 100) * 0.20);
 
-  const finalRiskScore = Math.round(Math.min(rawScore, 100));
+  // Unreadable fields are not defects, but they raise uncertainty: nudge the
+  // score toward REVIEW (floor at 31) so the document still appears for review
+  // rather than silently passing an unreadable document as APPROVE.
+  let finalRiskScore = Math.round(Math.min(rawScore, 100));
+  if (missingFields.length > 0) {
+    finalRiskScore = Math.max(finalRiskScore, 31);
+    if (rawScore < 31) {
+      flags.push("UNREADABLE_DOCUMENT_FIELDS");
+    }
+  }
 
   // --- Step 7: Verdict Assignment Logic ---
   // 0-30: APPROVE, 31-60: REVIEW, 61-100: REJECT
@@ -116,7 +150,7 @@ function calculateRiskScore({ documentNumber, expiryDate, dob, gender, nationali
     verdict = "REVIEW";
   }
 
-  return { riskScore: finalRiskScore, verdict, flags };
+  return { riskScore: finalRiskScore, verdict, flags, missingFields };
 }
 
 module.exports = {

@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { ArrowLeft, ChevronDown, FileText, UploadCloud, Play } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { SelfieCapture } from "@/components/SelfieCapture";
 import { setPendingScan } from "@/lib/pendingScan";
 
 export const Route = createFileRoute("/new-verification")({
@@ -28,11 +29,12 @@ function NewVerification() {
   const [file, setFile] = useState<File | null>(null);
   const [documentType, setDocumentType] = useState("Passport (International)");
   const [faceMatch, setFaceMatch] = useState(true);
+  const [selfie, setSelfie] = useState<File | null>(null);
 
   const startScreening = (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return;
-    setPendingScan({ file, documentType, faceMatch });
+    setPendingScan({ file, documentType, faceMatch, selfie });
     navigate({
       to: "/screening",
       search: { documentType, faceMatch },
@@ -109,15 +111,19 @@ function NewVerification() {
             </button>
           </div>
 
+          {faceMatch && <SelfieCapture selfie={selfie} onCapture={setSelfie} />}
+
           <button
             type="submit"
-            disabled={!file}
+            disabled={!file || (faceMatch && !selfie)}
             className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Play className="size-4" /> Start Screening
           </button>
           <p className="mt-3 text-center text-xs text-muted-foreground">
-            Upload a document to begin.
+            {faceMatch && !selfie
+              ? "Capture or upload a selfie to enable face-match verification."
+              : "Upload a document to begin."}
           </p>
         </div>
       </form>

@@ -196,7 +196,7 @@ app.post("/api/scan/file",
         ? forensics.face.face_score / 100
         : 1.0;
 
-      const { riskScore, verdict, flags } = calculateRiskScore({
+      const { riskScore, verdict, flags, missingFields } = calculateRiskScore({
         documentNumber,
         expiryDate,
         dob,
@@ -253,6 +253,7 @@ app.post("/api/scan/file",
           faceScore: faceScoreFraction,
           extractedData,
           tamperingFlags: allFlags,
+          missingFields,
           evidenceImageUrl,
           forensics: {
             ocr: forensics.ocr,

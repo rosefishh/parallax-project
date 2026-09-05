@@ -35,6 +35,7 @@ const screeningSteps = [
   "Blacklist Check",
   "Tampering Scan",
   "AI-Generated Content Check",
+  "Face Match",
   "Risk Assessment",
   "Finalizing Report",
 ];
@@ -70,6 +71,7 @@ function Screening() {
     const formData = new FormData();
     formData.append("document", pending.file);
     formData.append("documentType", search.documentType || pending.documentType);
+    if (pending.selfie) formData.append("selfie", pending.selfie);
 
     scanDocument(formData)
       .then((res) => {

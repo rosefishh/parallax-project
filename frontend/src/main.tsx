@@ -5,6 +5,8 @@ import { RouterProvider } from "@tanstack/react-router";
 import "./styles.css";
 import { router } from "./router";
 import { ScanProvider } from "@/lib/scan";
+import { ThemeProvider } from "@/lib/theme";
+import { AuthProvider } from "@/lib/auth";
 
 declare module "@tanstack/react-router" {
   interface Register {
@@ -16,8 +18,12 @@ const rootElement = document.getElementById("root")!;
 
 createRoot(rootElement).render(
   <StrictMode>
-    <ScanProvider>
-      <RouterProvider router={router} />
-    </ScanProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <ScanProvider>
+          <RouterProvider router={router} />
+        </ScanProvider>
+      </AuthProvider>
+    </ThemeProvider>
   </StrictMode>,
 );
