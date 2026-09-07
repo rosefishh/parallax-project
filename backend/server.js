@@ -824,7 +824,7 @@ app.delete("/api/audit/:id", async (req, res) => {
 });
 
 // =============================================
-// IDENTRA AI ASSISTANT (grounded in real data)
+// SNARE AI ASSISTANT (grounded in real data)
 // =============================================
 
 // POST /api/assistant — answer questions about the live verification data.
@@ -873,6 +873,56 @@ app.post("/api/assistant", async (req, res) => {
         data: {
           answer:
             "Every scan is scored from 0–100. Scores of 0–30 approve, 31–60 go to manual review, and 61–100 are rejected. The score combines validation errors (40%), tampering/blacklist signals (40%) and face-match confidence (20%). Flags such as INVALID_PASSPORT_FORMAT, EXPIRED_DOCUMENT, BLACKLISTED_DOCUMENT or tampering indicators raise the risk.",
+        },
+      });
+    }
+
+    if (/(tamper|forger|manipul|photo.?cut|edited|reprint)/.test(q)) {
+      return res.json({
+        success: true,
+        data: {
+          answer:
+            "Tampering is detected by the Python forensics engine. It looks for frequency-spectrum anomalies (signs of AI-rendered or reprinted pages), edge discontinuity around the photo (a cut-and-paste swap), panel inconsistencies between zones, and mismatched image metadata. Anything suspicious is highlighted on the annotated evidence image and contributes to the tamper score — any score above zero floors the scan to 31 and never lets it auto-approve.",
+        },
+      });
+    }
+
+    if (/(underage|minor|legible|readab|hard.?defect)/.test(q)) {
+      return res.json({
+        success: true,
+        data: {
+          answer:
+            "Readability and validity are separate checks. Even a perfectly legible passport goes to manual review if it carries a hard defect: expired, blacklisted, malformed document number, low face match, or a date of birth that makes the holder under 18. Each hard defect floors the verdict at 31 regardless of how clean the raw score looks. An unreadable field only raises the review floor (31/37/43/49/55) — it is never treated as proof of forgery.",
+        },
+      });
+    }
+
+    if (/(selfie|face.?match|biometric|live photo)/.test(q)) {
+      return res.json({
+        success: true,
+        data: {
+          answer:
+            "When no selfie is supplied, face matching is skipped and the face score counts as neutral (1.0), so scanning still completes. But matching the holder's live photo against the document is the strongest proof of identity this platform can produce, so officers are strongly advised to capture a selfie with every scan.",
+        },
+      });
+    }
+
+    if (/(ocr|mrz|blur|damaged|unreadab|recover|extract)/.test(q)) {
+      return res.json({
+        success: true,
+        data: {
+          answer:
+            "OCR runs Tesseract with tesseract-to-text fallbacks. If the machine-readable zone is noisy, the engine runs a tolerant MRZ parse anchored on the document number, and for printed date cells it repairs mangled digits character-by-character (S→5, O→0, I→1, B→8) before normalising the date — for example a blended \"05/08/2018\" is recovered exactly. If recovery still fails, the field counts as unreadable and pushes the scan to REVIEW; the engine never guesses a date to force approval.",
+        },
+      });
+    }
+
+    if (/(audit|certificate|pdf|export|csv)/.test(q)) {
+      return res.json({
+        success: true,
+        data: {
+          answer:
+            "Every scan, verdict, export and blacklist change is written to the audit trail with the acting officer, timestamp and action. Each verification can be exported as a signed PDF certificate, and the workspace (history, blacklist or audit log) can be exported to CSV or txt for compliance records.",
         },
       });
     }

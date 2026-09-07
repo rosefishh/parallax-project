@@ -285,7 +285,7 @@ function generateReportFile(
   }
 
   const lines: string[] = [
-    "IDENTRA AI — SNARE Verification Console",
+    "SNARE AI — SNARE Verification Console",
     "AI-Powered Identity & Document Screening System",
     "Verification Report",
     "",

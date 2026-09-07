@@ -14,12 +14,12 @@ import { Route as AuditTrailRouteImport } from './routes/audit-trail'
 import { Route as BlacklistRouteImport } from './routes/blacklist'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as HistoryRouteImport } from './routes/history'
-import { Route as IdentraAiRouteImport } from './routes/identra-ai'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as NewVerificationRouteImport } from './routes/new-verification'
 import { Route as ScreeningRouteImport } from './routes/screening'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as SnareAiRouteImport } from './routes/snare-ai'
 import { Route as VerificationCompleteRouteImport } from './routes/verification-complete'
 
 const IndexRoute = IndexRouteImport.update({
@@ -47,11 +47,6 @@ const HistoryRoute = HistoryRouteImport.update({
   path: '/history',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IdentraAiRoute = IdentraAiRouteImport.update({
-  id: '/identra-ai',
-  path: '/identra-ai',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -77,6 +72,11 @@ const SignupRoute = SignupRouteImport.update({
   path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SnareAiRoute = SnareAiRouteImport.update({
+  id: '/snare-ai',
+  path: '/snare-ai',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VerificationCompleteRoute = VerificationCompleteRouteImport.update({
   id: '/verification-complete',
   path: '/verification-complete',
@@ -89,12 +89,12 @@ export interface FileRoutesByFullPath {
   '/blacklist': typeof BlacklistRoute
   '/dashboard': typeof DashboardRoute
   '/history': typeof HistoryRoute
-  '/identra-ai': typeof IdentraAiRoute
   '/login': typeof LoginRoute
   '/new-verification': typeof NewVerificationRoute
   '/screening': typeof ScreeningRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/snare-ai': typeof SnareAiRoute
   '/verification-complete': typeof VerificationCompleteRoute
 }
 export interface FileRoutesByTo {
@@ -103,12 +103,12 @@ export interface FileRoutesByTo {
   '/blacklist': typeof BlacklistRoute
   '/dashboard': typeof DashboardRoute
   '/history': typeof HistoryRoute
-  '/identra-ai': typeof IdentraAiRoute
   '/login': typeof LoginRoute
   '/new-verification': typeof NewVerificationRoute
   '/screening': typeof ScreeningRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/snare-ai': typeof SnareAiRoute
   '/verification-complete': typeof VerificationCompleteRoute
 }
 export interface FileRoutesById {
@@ -118,12 +118,12 @@ export interface FileRoutesById {
   '/blacklist': typeof BlacklistRoute
   '/dashboard': typeof DashboardRoute
   '/history': typeof HistoryRoute
-  '/identra-ai': typeof IdentraAiRoute
   '/login': typeof LoginRoute
   '/new-verification': typeof NewVerificationRoute
   '/screening': typeof ScreeningRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/snare-ai': typeof SnareAiRoute
   '/verification-complete': typeof VerificationCompleteRoute
 }
 export interface FileRouteTypes {
@@ -134,12 +134,12 @@ export interface FileRouteTypes {
     | '/blacklist'
     | '/dashboard'
     | '/history'
-    | '/identra-ai'
     | '/login'
     | '/new-verification'
     | '/screening'
     | '/settings'
     | '/signup'
+    | '/snare-ai'
     | '/verification-complete'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -148,12 +148,12 @@ export interface FileRouteTypes {
     | '/blacklist'
     | '/dashboard'
     | '/history'
-    | '/identra-ai'
     | '/login'
     | '/new-verification'
     | '/screening'
     | '/settings'
     | '/signup'
+    | '/snare-ai'
     | '/verification-complete'
   id:
     | '__root__'
@@ -162,12 +162,12 @@ export interface FileRouteTypes {
     | '/blacklist'
     | '/dashboard'
     | '/history'
-    | '/identra-ai'
     | '/login'
     | '/new-verification'
     | '/screening'
     | '/settings'
     | '/signup'
+    | '/snare-ai'
     | '/verification-complete'
   fileRoutesById: FileRoutesById
 }
@@ -177,12 +177,12 @@ export interface RootRouteChildren {
   BlacklistRoute: typeof BlacklistRoute
   DashboardRoute: typeof DashboardRoute
   HistoryRoute: typeof HistoryRoute
-  IdentraAiRoute: typeof IdentraAiRoute
   LoginRoute: typeof LoginRoute
   NewVerificationRoute: typeof NewVerificationRoute
   ScreeningRoute: typeof ScreeningRoute
   SettingsRoute: typeof SettingsRoute
   SignupRoute: typeof SignupRoute
+  SnareAiRoute: typeof SnareAiRoute
   VerificationCompleteRoute: typeof VerificationCompleteRoute
 }
 
@@ -223,13 +223,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HistoryRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/identra-ai': {
-      id: '/identra-ai'
-      path: '/identra-ai'
-      fullPath: '/identra-ai'
-      preLoaderRoute: typeof IdentraAiRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -265,6 +258,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/snare-ai': {
+      id: '/snare-ai'
+      path: '/snare-ai'
+      fullPath: '/snare-ai'
+      preLoaderRoute: typeof SnareAiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/verification-complete': {
       id: '/verification-complete'
       path: '/verification-complete'
@@ -281,12 +281,12 @@ const rootRouteChildren: RootRouteChildren = {
   BlacklistRoute: BlacklistRoute,
   DashboardRoute: DashboardRoute,
   HistoryRoute: HistoryRoute,
-  IdentraAiRoute: IdentraAiRoute,
   LoginRoute: LoginRoute,
   NewVerificationRoute: NewVerificationRoute,
   ScreeningRoute: ScreeningRoute,
   SettingsRoute: SettingsRoute,
   SignupRoute: SignupRoute,
+  SnareAiRoute: SnareAiRoute,
   VerificationCompleteRoute: VerificationCompleteRoute,
 }
 export const routeTree = rootRouteImport

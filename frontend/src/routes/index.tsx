@@ -27,7 +27,7 @@ export const Route = createFileRoute("/")({
       {
         property: "og:description",
         content:
-          "Assisting reviewers. Eliminating blind spots. A unified verification console by Identra AI.",
+          "Assisting reviewers. Eliminating blind spots. A unified verification console by Snare AI.",
       },
     ],
   }),
