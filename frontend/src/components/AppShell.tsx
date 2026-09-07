@@ -23,10 +23,10 @@ const nav = [
   { to: "/", label: "Home", hi: "होम", icon: Sparkles },
   { to: "/dashboard", label: "Dashboard", hi: "डैशबोर्ड", icon: LayoutDashboard },
   { to: "/new-verification", label: "New Verification", hi: "नया सत्यापन", icon: FilePlus2 },
-  { to: "/snare-ai", label: "Snare AI", hi: "स्नेयर एआई", icon: Sparkles },
   { to: "/history", label: "History", hi: "इतिहास", icon: History },
   { to: "/blacklist", label: "Blacklist Admin", hi: "काली सूची प्रशासन", icon: ShieldBan },
   { to: "/audit-trail", label: "Audit Trail", hi: "लेखा परीक्षा", icon: ScrollText },
+  { to: "/snare-ai", label: "FAQ", hi: "अक्सर पूछे जाने वाले प्रश्न", icon: Sparkles },
   { to: "/settings", label: "Settings", hi: "सेटिंग", icon: Settings },
 ] as const;
 

@@ -1,22 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { Sparkles, Send, LoaderCircle, ChevronDown } from "lucide-react";
+import { Sparkles, Send, LoaderCircle, ChevronDown, Search } from "lucide-react";
 import { AppShell, PageTitle } from "@/components/AppShell";
 import { askAssistant } from "@/api";
 
 export const Route = createFileRoute("/snare-ai")({
   head: () => ({
     meta: [
-      { title: "Snare AI — SNARE Verification Assistant" },
+      { title: "FAQ — SNARE Verification Assistant" },
       {
         name: "description",
         content:
-          "Ask Snare AI about verification records, the risk scoring model, tampering signals and blacklist entries.",
+          "Frequently asked questions about SNARE verification plus the Snare AI assistant for records, the risk scoring model, tampering signals and the blacklist.",
       },
-      { property: "og:title", content: "Snare AI — SNARE Verification Assistant" },
+      { property: "og:title", content: "FAQ — SNARE Verification Assistant" },
       {
         property: "og:description",
-        content: "Conversational assistant grounded in your live verification and blacklist data.",
+        content: "Answers to common questions, plus a conversational assistant grounded in live verification data.",
       },
     ],
   }),
@@ -29,8 +29,6 @@ const prompts = [
   "How is tampering detected?",
   "What's on the blacklist?",
 ];
-
-const quickPrompts = [...prompts, ...faqs.map((f) => f.q)];
 
 const faqs: { q: string; a: string }[] = [
   {
@@ -71,9 +69,16 @@ const faqs: { q: string; a: string }[] = [
   },
 ];
 
+const quickPrompts = [...prompts, ...faqs.map((f) => f.q)];
+
 type Msg = { role: "ai" | "user"; text: string };
 
 function SnareAI() {
+  const [faqQuery, setFaqQuery] = useState("");
+  const filteredFaqs = faqs.filter((f) =>
+    `${f.q} ${f.a}`.toLowerCase().includes(faqQuery.trim().toLowerCase()),
+  );
+
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "ai",
@@ -106,85 +111,123 @@ function SnareAI() {
 
   return (
     <AppShell>
-      <PageTitle title="Snare AI" hi="स्नेयर एआई" />
+      <PageTitle title="FAQ" hi="अक्सर पूछे जाने वाले प्रश्न" />
 
-      <div className="surface-card flex min-h-[28rem] flex-col p-6">
-        <div className="flex-1 space-y-4">
-          {messages.map((m, i) => (
-            <div key={i} className={m.role === "user" ? "flex justify-end" : "flex gap-3"}>
-              {m.role === "ai" && (
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent">
-                  <Sparkles className="size-4 text-primary" />
-                </span>
-              )}
-              <p
-                className={`max-w-lg whitespace-pre-wrap rounded-xl px-4 py-2.5 text-sm ${
-                  m.role === "ai"
-                    ? "bg-accent text-accent-foreground"
-                    : "bg-primary text-primary-foreground"
-                }`}
-              >
-                {m.text}
+      <div className="grid gap-6 lg:grid-cols-5">
+        <div className="lg:col-span-3">
+          <div className="surface-card p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="label-caps text-xs">Frequently Asked Questions</h2>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  value={faqQuery}
+                  onChange={(e) => setFaqQuery(e.target.value)}
+                  aria-label="Search frequently asked questions"
+                  placeholder="Search questions..."
+                  className="w-64 rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+                />
+              </div>
+            </div>
+
+            {filteredFaqs.length === 0 ? (
+              <p className="mt-6 text-sm text-muted-foreground">
+                No questions match "{faqQuery}". Try a different keyword or ask Snare AI on the
+                right.
               </p>
-            </div>
-          ))}
-          {pending && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <LoaderCircle className="size-4 animate-spin" /> Thinking...
-            </div>
-          )}
+            ) : (
+              <div className="mt-2 divide-y divide-border/60">
+                {filteredFaqs.map((f) => (
+                  <details key={f.q} className="group py-3">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold">
+                      {f.q}
+                      <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+                    </summary>
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{f.a}</p>
+                  </details>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="mt-6 flex flex-wrap gap-2">
-          {quickPrompts.map((p) => (
-            <button
-              key={p}
-              onClick={() => send(p)}
-              disabled={pending}
-              className="rounded-full bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+        <div className="lg:col-span-2">
+          <div className="surface-card flex min-h-[28rem] flex-col p-6">
+            <div className="flex items-center gap-2">
+              <span className="flex size-8 items-center justify-center rounded-full bg-accent">
+                <Sparkles className="size-4 text-primary" />
+              </span>
+              <div>
+                <p className="text-sm font-bold">Ask</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Grounded in your live verification & blacklist data
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex-1 space-y-4">
+              {messages.map((m, i) => (
+                <div key={i} className={m.role === "user" ? "flex justify-end" : "flex gap-3"}>
+                  {m.role === "ai" && (
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent">
+                      <Sparkles className="size-4 text-primary" />
+                    </span>
+                  )}
+                  <p
+                    className={`max-w-lg whitespace-pre-wrap rounded-xl px-4 py-2.5 text-sm ${
+                      m.role === "ai"
+                        ? "bg-accent text-accent-foreground"
+                        : "bg-primary text-primary-foreground"
+                    }`}
+                  >
+                    {m.text}
+                  </p>
+                </div>
+              ))}
+              {pending && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <LoaderCircle className="size-4 animate-spin" /> Thinking...
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {quickPrompts.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => send(p)}
+                  disabled={pending}
+                  className="rounded-full bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                send(input);
+              }}
+              className="mt-3 flex gap-2"
             >
-              {p}
-            </button>
-          ))}
-        </div>
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            send(input);
-          }}
-          className="mt-3 flex gap-2"
-        >
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            aria-label="Ask Snare AI"
-            placeholder="Ask about a record, stats, or the risk model..."
-            className="flex-1 rounded-lg border border-border bg-card px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring/40"
-          />
-          <button
-            type="submit"
-            disabled={pending || !input.trim()}
-            className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {pending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}{" "}
-            Send
-          </button>
-        </form>
-      </div>
-
-      <div className="surface-card mt-6 p-6">
-        <h2 className="label-caps text-xs">Frequently Asked Questions</h2>
-        <div className="mt-4 divide-y divide-border/60">
-          {faqs.map((f) => (
-            <details key={f.q} className="group py-3">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold">
-                {f.q}
-                <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-              </summary>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{f.a}</p>
-            </details>
-          ))}
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                aria-label="Ask Snare AI"
+                placeholder="Ask about a record, stats, or the risk model..."
+                className="flex-1 rounded-lg border border-border bg-card px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring/40"
+              />
+              <button
+                type="submit"
+                disabled={pending || !input.trim()}
+                className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {pending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}{" "}
+                Send
+              </button>
+            </form>
+          </div>
         </div>
       </div>
     </AppShell>

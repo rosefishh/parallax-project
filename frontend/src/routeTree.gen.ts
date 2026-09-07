@@ -14,6 +14,7 @@ import { Route as AuditTrailRouteImport } from './routes/audit-trail'
 import { Route as BlacklistRouteImport } from './routes/blacklist'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as HistoryRouteImport } from './routes/history'
+import { Route as IdentraAiRouteImport } from './routes/identra-ai'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as NewVerificationRouteImport } from './routes/new-verification'
 import { Route as ScreeningRouteImport } from './routes/screening'
@@ -45,6 +46,11 @@ const DashboardRoute = DashboardRouteImport.update({
 const HistoryRoute = HistoryRouteImport.update({
   id: '/history',
   path: '/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IdentraAiRoute = IdentraAiRouteImport.update({
+  id: '/identra-ai',
+  path: '/identra-ai',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/blacklist': typeof BlacklistRoute
   '/dashboard': typeof DashboardRoute
   '/history': typeof HistoryRoute
+  '/identra-ai': typeof IdentraAiRoute
   '/login': typeof LoginRoute
   '/new-verification': typeof NewVerificationRoute
   '/screening': typeof ScreeningRoute
@@ -103,6 +110,7 @@ export interface FileRoutesByTo {
   '/blacklist': typeof BlacklistRoute
   '/dashboard': typeof DashboardRoute
   '/history': typeof HistoryRoute
+  '/identra-ai': typeof IdentraAiRoute
   '/login': typeof LoginRoute
   '/new-verification': typeof NewVerificationRoute
   '/screening': typeof ScreeningRoute
@@ -118,6 +126,7 @@ export interface FileRoutesById {
   '/blacklist': typeof BlacklistRoute
   '/dashboard': typeof DashboardRoute
   '/history': typeof HistoryRoute
+  '/identra-ai': typeof IdentraAiRoute
   '/login': typeof LoginRoute
   '/new-verification': typeof NewVerificationRoute
   '/screening': typeof ScreeningRoute
@@ -134,6 +143,7 @@ export interface FileRouteTypes {
     | '/blacklist'
     | '/dashboard'
     | '/history'
+    | '/identra-ai'
     | '/login'
     | '/new-verification'
     | '/screening'
@@ -148,6 +158,7 @@ export interface FileRouteTypes {
     | '/blacklist'
     | '/dashboard'
     | '/history'
+    | '/identra-ai'
     | '/login'
     | '/new-verification'
     | '/screening'
@@ -162,6 +173,7 @@ export interface FileRouteTypes {
     | '/blacklist'
     | '/dashboard'
     | '/history'
+    | '/identra-ai'
     | '/login'
     | '/new-verification'
     | '/screening'
@@ -177,6 +189,7 @@ export interface RootRouteChildren {
   BlacklistRoute: typeof BlacklistRoute
   DashboardRoute: typeof DashboardRoute
   HistoryRoute: typeof HistoryRoute
+  IdentraAiRoute: typeof IdentraAiRoute
   LoginRoute: typeof LoginRoute
   NewVerificationRoute: typeof NewVerificationRoute
   ScreeningRoute: typeof ScreeningRoute
@@ -221,6 +234,13 @@ declare module '@tanstack/react-router' {
       path: '/history'
       fullPath: '/history'
       preLoaderRoute: typeof HistoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/identra-ai': {
+      id: '/identra-ai'
+      path: '/identra-ai'
+      fullPath: '/identra-ai'
+      preLoaderRoute: typeof IdentraAiRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -281,6 +301,7 @@ const rootRouteChildren: RootRouteChildren = {
   BlacklistRoute: BlacklistRoute,
   DashboardRoute: DashboardRoute,
   HistoryRoute: HistoryRoute,
+  IdentraAiRoute: IdentraAiRoute,
   LoginRoute: LoginRoute,
   NewVerificationRoute: NewVerificationRoute,
   ScreeningRoute: ScreeningRoute,
