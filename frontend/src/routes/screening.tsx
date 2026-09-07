@@ -7,7 +7,7 @@ import { scanDocument } from "@/api";
 
 export const Route = createFileRoute("/screening")({
   validateSearch: (search: Record<string, unknown>) => ({
-    documentType: typeof search.documentType === "string" ? search.documentType : "Passport",
+    documentType: typeof search.documentType === "string" ? search.documentType : "PASSPORT",
     faceMatch: search.faceMatch === "true" || search.faceMatch === true,
   }),
   head: () => ({

@@ -7,7 +7,7 @@ const multer = require("multer");
 const { exec } = require("child_process");
 const { promisify } = require("util");
 const { PrismaClient } = require("@prisma/client");
-const { calculateRiskScore } = require("./rules");
+const { calculateRiskScore, normalizeDocumentType, documentTypeMeta } = require("./rules");
 
 require("dotenv").config();
 
@@ -106,7 +106,8 @@ app.post("/api/scan", async (req, res) => {
     }
 
     // 2. Risk Engine Calculation (rules.js)
-    const { riskScore, verdict, flags } = calculateRiskScore({
+    const docType = normalizeDocumentType(documentType);
+    const { riskScore, verdict, flags, missingFields } = calculateRiskScore({
       documentNumber,
       expiryDate,
       dob,
@@ -114,18 +115,19 @@ app.post("/api/scan", async (req, res) => {
       nationality,
       faceScore: parseFloat(faceScore || 1.0),
       isBlacklisted,
-      tamperScore: forensicScore
+      tamperScore: forensicScore,
+      documentType: docType
     });
     const allFlags = [...flags, ...forensicFlags];
 
     // 3. Save Audit Log to Supabase Scan Table
     const scanRecord = await prisma.scan.create({
       data: {
-        documentType: documentType || "PASSPORT",
+        documentType: docType,
         extractedData: extractedData || { documentNumber, expiryDate, dob, gender, nationality },
         validationResults: { 
           isBlacklisted, 
-          passportFormatValid: !flags.includes("INVALID_PASSPORT_FORMAT"),
+          docFormatValid: !flags.includes("INVALID_DOCUMENT_FORMAT"),
           isExpired: flags.includes("EXPIRED_DOCUMENT")
         },
         tamperingFlags: allFlags,
@@ -170,9 +172,10 @@ app.post("/api/scan/file",
       const body = req.body || {};
 
       // 1. Single Python forensics pass: OCR + AI + tamper + face
+      const docType = normalizeDocumentType(body.documentType);
       const selfieArg = selfiePath ? ` --selfie "${selfiePath}"` : "";
       const { stdout } = await execPromise(
-        `${forensicsPython()} forensics_pipeline.py --document "${docPath}"${selfieArg}`
+        `${forensicsPython()} forensics_pipeline.py --document "${docPath}" --document-type "${docType}"${selfieArg}`
       );
       const forensics = JSON.parse(stdout);
 
@@ -204,7 +207,8 @@ app.post("/api/scan/file",
         nationality,
         faceScore: faceScoreFraction,
         isBlacklisted,
-        tamperScore: (forensics.tamper?.tamperScore || 0) + (forensics.ai?.aiScore || 0)
+        tamperScore: (forensics.tamper?.tamperScore || 0) + (forensics.ai?.aiScore || 0),
+        documentType: docType
       });
 
       const forensicFlagList = [
@@ -220,11 +224,11 @@ app.post("/api/scan/file",
       // 5. Persist audit record
       const scanRecord = await prisma.scan.create({
         data: {
-          documentType: body.documentType || "PASSPORT",
+          documentType: docType,
           extractedData,
           validationResults: {
             isBlacklisted,
-            passportFormatValid: !flags.includes("INVALID_PASSPORT_FORMAT"),
+            docFormatValid: !flags.includes("INVALID_DOCUMENT_FORMAT"),
             isExpired: flags.includes("EXPIRED_DOCUMENT")
           },
           tamperingFlags: allFlags,
@@ -281,7 +285,8 @@ app.use((err, req, res, next) => {
 
 // Human-readable descriptions for every risk / forensic flag the engines can emit.
 const FLAG_LABELS = {
-  INVALID_PASSPORT_FORMAT: "Document number does not match the Indian passport format (2 letters followed by 7 digits).",
+  INVALID_DOCUMENT_FORMAT: "Document number does not match the expected format for its document type (e.g. passport 2 letters + 7 digits, Aadhaar 12 digits, PAN 5 letters + 4 digits + 1 letter, EPIC 3 letters + 7 digits).",
+  AADHAAR_CHECKSUM_FAILED: "Aadhaar number has 12 digits but fails the official Verhoeff checksum — strong sign of a fabricated number.",
   EXPIRED_DOCUMENT: "Document has passed its expiration date.",
   UNDERAGE_OR_INVALID_DOB: "Date of birth could not be validated or the holder appears to be under 18.",
   INVALID_GENDER_CODE: "Gender code is not one of the permitted values (M, F, X).",
@@ -384,11 +389,13 @@ app.get("/api/scans/:id/pdf", async (req, res) => {
       detail: { scanId: scan.id, verdict: scan.verdict },
     });
 
+const meta = documentTypeMeta(scan.documentType);
+
     // FORCE DIRECT DOWNLOAD TO PC (attachment instead of inline)
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="passport_audit_${scan.id}.pdf"`
+      `attachment; filename="${meta.slug}_audit_${scan.id}.pdf"`
     );
 
     const doc = new PDFDocument({ margin: 48, size: "A4" });
@@ -406,10 +413,14 @@ app.get("/api/scans/:id/pdf", async (req, res) => {
     const generatedAt = new Date().toLocaleString("en-IN", { dateStyle: "long", timeStyle: "short" });
 
     const safeRisk = Math.max(0, Math.min(100, Number(scan.riskScore) || 0));
-    const fmtTone = validation.passportFormatValid === false ? "bad" : validation.passportFormatValid === true ? "good" : "neutral";
+    const fmtTone = validation.docFormatValid === false ? "bad" : validation.docFormatValid === true ? "good" : "neutral";
     const expTone = validation.isExpired ? "bad" : extracted.expiryDate ? "good" : "neutral";
     const blackTone = validation.isBlacklisted ? "bad" : "good";
     const faceTone = hasLowFaceFlag ? "bad" : facePerformed ? "good" : "neutral";
+    const hasExpiry = meta.requiresExpiry;
+    const hasNationality = meta.requiresNationality;
+    const rawDocNumber = String(extracted.documentNumber || "");
+    const docNumberValue = hasExpiry && !rawDocNumber ? "Not readable" : rawDocNumber || "Not readable";
 
     // ── Header band ───────────────────────────────────────────────
     doc.rect(0, 0, doc.page.width, 88).fill("#0f172a");
@@ -418,7 +429,7 @@ app.get("/api/scans/:id/pdf", async (req, res) => {
     doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(18)
       .text("SN", 48, 30, { width: 52, align: "center" });
     doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(16)
-      .text("PASSPORT VERIFICATION", 114, 24, { width: 330 });
+      .text(meta.title, 114, 24, { width: 330 });
     doc.font("Helvetica-Bold").fontSize(11).fillColor(colors.band)
       .text("AUDIT CERTIFICATE", 114, 44, { width: 330 });
     doc.font("Helvetica").fontSize(8).fillColor("#cbd5e1")
@@ -451,27 +462,27 @@ app.get("/api/scans/:id/pdf", async (req, res) => {
     y = drawSectionHead(doc, 1, "Verification Summary", colors.band, y);
     y = drawDataRow(doc, [
       { label: "Scan ID", value: scan.id.slice(0, 13).toUpperCase(), tone: "neutral" },
-      { label: "Document Type", value: String(scan.documentType || "Passport") },
+      { label: "Document Type", value: meta.label },
     ], y);
     y = drawDataRow(doc, [
       {
-        label: "Document Number",
-        value: String(extracted.documentNumber || ""),
-        tone: validation.passportFormatValid === false ? "bad" : "default",
+        label: meta.numberLabel,
+        value: docNumberValue,
+        tone: validation.docFormatValid === false ? "bad" : "default",
       },
       {
         label: "Format Check",
-        value: validation.passportFormatValid === true ? "Valid format" :
-          validation.passportFormatValid === false ? "Format validation failed" : "Not readable",
+        value: validation.docFormatValid === true ? "Valid format" :
+          validation.docFormatValid === false ? "Format validation failed" : "Not readable",
         tone: fmtTone,
       },
     ], y);
     y = drawDataRow(doc, [
-      { label: "Expiry Date", value: extractDate(extracted.expiryDate) || "—", tone: expTone === "bad" ? "bad" : "default" },
+      { label: "Expiry Date", value: hasExpiry ? (extractDate(extracted.expiryDate) || "—") : "N/A — permanent validity", tone: hasExpiry ? (expTone === "bad" ? "bad" : "default") : "neutral" },
       {
         label: "Expiry Status",
-        value: validation.isExpired ? "Expired" : extracted.expiryDate ? "Active" : "Not readable",
-        tone: expTone,
+        value: hasExpiry ? (validation.isExpired ? "Expired" : extracted.expiryDate ? "Active" : "Not readable") : "Not applicable",
+        tone: hasExpiry ? expTone : "neutral",
       },
     ], y);
     y = drawDataRow(doc, [
@@ -491,17 +502,34 @@ app.get("/api/scans/:id/pdf", async (req, res) => {
     // ── 2. Extracted Document Details ─────────────────────────────
     y = drawSectionHead(doc, 2, "Extracted Document Details", colors.band, y);
     y = drawDataRow(doc, [
-      { label: "Document Number", value: String(extracted.documentNumber || "") || "—" },
+      { label: meta.numberLabel, value: docNumberValue },
       { label: "Date of Birth", value: extractDate(extracted.dob) || "—" },
     ], y);
-    y = drawDataRow(doc, [
-      { label: "Expiry Date", value: extractDate(extracted.expiryDate) || "—" },
-      { label: "Gender", value: extracted.gender ? String(extracted.gender).toUpperCase() : "—" },
-    ], y);
-    y = drawDataRow(doc, [
-      { label: "Nationality", value: String(extracted.nationality || "") || "—" },
-      { label: "Review Status", value: scan.needsReview ? "Flagged for review" : "Auto-cleared", tone: scan.needsReview ? "warn" : "good" },
-    ], y);
+    const detailPairs = [];
+    if (hasExpiry) {
+      detailPairs.push([
+        { label: "Expiry Date", value: extractDate(extracted.expiryDate) || "—" },
+        { label: "Gender", value: extracted.gender ? String(extracted.gender).toUpperCase() : "—" },
+      ]);
+    } else {
+      detailPairs.push([
+        { label: "Expiry Date", value: "N/A — permanent validity", tone: "neutral" },
+        { label: "Gender", value: hasNationality === false && meta.code === "PAN" ? "N/A" : (extracted.gender ? String(extracted.gender).toUpperCase() : "—") },
+      ]);
+    }
+    const reviewCell = { label: "Review Status", value: scan.needsReview ? "Flagged for review" : "Auto-cleared", tone: scan.needsReview ? "warn" : "good" };
+    if (hasNationality) {
+      detailPairs.push([
+        { label: "Nationality", value: String(extracted.nationality || "") || "—" },
+        reviewCell,
+      ]);
+    } else {
+      detailPairs.push([
+        { label: "Nationality", value: "N/A", tone: "neutral" },
+        reviewCell,
+      ]);
+    }
+    for (const pair of detailPairs) y = drawDataRow(doc, pair, y);
     y += 10;
 
     // ── 3. Findings & Reason Flags ────────────────────────────────
@@ -945,7 +973,17 @@ app.post("/api/assistant", async (req, res) => {
         success: true,
         data: {
           answer:
-            "Every scan is scored from 0–100. Scores of 0–30 approve, 31–60 go to manual review, and 61–100 are rejected. The score combines validation errors (40%), tampering/blacklist signals (40%) and face-match confidence (20%). Flags such as INVALID_PASSPORT_FORMAT, EXPIRED_DOCUMENT, BLACKLISTED_DOCUMENT or tampering indicators raise the risk.",
+            "Every scan is scored from 0–100. Scores of 0–30 approve, 31–60 go to manual review, and 61–100 are rejected. The score combines validation errors (40%), tampering/blacklist signals (40%) and face-match confidence (20%). Flags such as INVALID_DOCUMENT_FORMAT, EXPIRED_DOCUMENT, BLACKLISTED_DOCUMENT or tampering indicators raise the risk.",
+        },
+      });
+    }
+
+    if (/(document.?type|what.?documents|supported|aadhaar|pan|voter.?id|epic|types? of id)/.test(q)) {
+      return res.json({
+        success: true,
+        data: {
+          answer:
+            "The engine currently validates four Indian identity documents. Passport — number format 2 letters + 7 digits, expiry and nationality both checked. Aadhaar — 12-digit UIDAI number, verified against the official Verhoeff checksum so a fabricated number is caught. PAN — 5 letters + 4 digits + 1 letter. Voter ID / EPIC — 3 letters + 7 digits. Aadhaar, PAN and Voter ID carry no expiry date, so they are never penalised for a missing expiry. All document types still run OCR, AI-generation and tamper forensics, plus an optional live selfie face match.",
         },
       });
     }

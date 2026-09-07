@@ -5,6 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { AsyncBoundary } from "@/components/AsyncState";
 import { fetchScan, reviewScan, downloadPdfReport, resolveApiUrl, formatDate } from "@/api";
 import { useAuth } from "@/lib/auth";
+import { documentTypeMeta } from "@/lib/documentTypes";
 
 export const Route = createFileRoute("/verification-complete")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -91,6 +92,8 @@ function ResultCard({ scanId }: { scanId: string }) {
   const validation = scan.validationResults ?? {};
   const flags = scan.tamperingFlags ?? [];
   const needsReview = scan.needsReview ?? false;
+  const meta = documentTypeMeta(scan.documentType);
+  const docFormatValid = validation.docFormatValid ?? validation.passportFormatValid ?? false;
 
   const okVerdict = scan.verdict === "APPROVE";
   const reviewVerdict = scan.verdict === "REVIEW";
@@ -105,17 +108,17 @@ function ResultCard({ scanId }: { scanId: string }) {
 
   const curated = [
     ["Verification ID", scan.id.slice(0, 8)],
-    ["Document Type", String(scan.documentType ?? "Passport")],
-    ["Document Number", String(extracted.documentNumber ?? "—")],
-    ["Expiry Date", String(extracted.expiryDate ?? "—")],
+    ["Document Type", meta.label],
+    [meta.numberLabel, String(extracted.documentNumber ?? "—")],
+    ...(meta.requiresExpiry ? [["Expiry Date", String(extracted.expiryDate ?? "—")] as [string, string]] : []),
     ["Date of Birth", String(extracted.dob ?? "—")],
-    ["Nationality", String(extracted.nationality ?? "—")],
-    ["Gender", String(extracted.gender ?? "—")],
+    ...(meta.requiresNationality ? [["Nationality", String(extracted.nationality ?? "—")] as [string, string]] : []),
+    ...(meta.requiresGender ? [["Gender", String(extracted.gender ?? "—")] as [string, string]] : []),
     ["Timestamp", formatDate(scan.createdAt)],
   ];
 
   const findings = [
-    { label: "Document Validation", value: (validation.passportFormatValid ?? false) ? "Passed" : "Failed", tone: (validation.passportFormatValid ?? false) ? "good" : "bad" },
+    { label: "Document Validation", value: docFormatValid ? "Passed" : "Failed", tone: docFormatValid ? "good" : "bad" },
     {
       label: "Face Match",
       value: faceSkipped ? "Not Performed" : faceMatched ? `${facePercent}% Match` : `${facePercent}% Mismatch`,

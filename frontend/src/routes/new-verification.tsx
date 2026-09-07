@@ -1,9 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { ArrowLeft, ChevronDown, FileText, UploadCloud, Play } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, FileText, UploadCloud, Play } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { SelfieCapture } from "@/components/SelfieCapture";
 import { setPendingScan } from "@/lib/pendingScan";
+import { DOCUMENT_TYPES } from "@/lib/documentTypes";
 
 export const Route = createFileRoute("/new-verification")({
   head: () => ({
@@ -12,7 +13,7 @@ export const Route = createFileRoute("/new-verification")({
       {
         name: "description",
         content:
-          "Upload a passport, national ID or driver's licence and run SNARE's KYC and AML document screening engine.",
+          "Upload a passport, Aadhaar, PAN or voter ID and run SNARE's KYC and AML document screening engine.",
       },
       { property: "og:title", content: "New Verification — SNARE KYC Screening" },
       {
@@ -27,9 +28,10 @@ export const Route = createFileRoute("/new-verification")({
 function NewVerification() {
   const navigate = useNavigate();
   const [file, setFile] = useState<File | null>(null);
-  const [documentType, setDocumentType] = useState("Passport (International)");
+  const [documentType, setDocumentType] = useState("PASSPORT");
   const [faceMatch, setFaceMatch] = useState(true);
   const [selfie, setSelfie] = useState<File | null>(null);
+  const selectedDoc = DOCUMENT_TYPES.find((d) => d.code === documentType) ?? DOCUMENT_TYPES[0];
 
   const startScreening = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,13 +66,25 @@ function NewVerification() {
               onChange={(e) => setDocumentType(e.target.value)}
               className="w-full appearance-none rounded-lg border border-border bg-card py-2.5 pl-9 pr-9 text-sm outline-none focus:ring-2 focus:ring-ring/40"
             >
-              <option>Passport (International)</option>
-              <option>National ID</option>
-              <option>Driver&apos;s License</option>
-              <option>Residence Permit</option>
+              {DOCUMENT_TYPES.map((d) => (
+                <option key={d.code} value={d.code}>
+                  {d.label}
+                </option>
+              ))}
             </select>
             <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
+          <p className="mt-2 text-xs text-muted-foreground">{selectedDoc.hint}</p>
+          <ul className="mt-2 flex flex-wrap gap-1.5">
+            {selectedDoc.fields.map((f) => (
+              <li
+                key={f}
+                className="flex items-center gap-1 rounded-full bg-accent px-2.5 py-1 text-[11px] font-medium text-accent-foreground"
+              >
+                <Check className="size-3 text-primary" /> {f}
+              </li>
+            ))}
+          </ul>
 
           <p className="label-caps mt-5">Upload File</p>
           <label className="mt-2 flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-primary/40 bg-accent/40 px-6 py-10 text-center transition-colors hover:bg-accent/70">

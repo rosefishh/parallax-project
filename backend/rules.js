@@ -1,5 +1,5 @@
 // ==========================================
-// STEP 4: INDIVIDUAL VALIDATION RULES
+// INDIVIDUAL VALIDATION RULES — MULTI-DOCUMENT
 // ==========================================
 // Each rule returns a tri-state status:
 //   "valid"   - value present and passes the check
@@ -8,8 +8,124 @@
 // The risk engine treats only "invalid" as a hard defect. A "missing" field
 // cannot be condemned as a forgery — it means we could not read the document,
 // so it becomes a soft note that pushes toward REVIEW, never a hard REJECT.
+//
+// Supported document types are validated against their own formats and only
+// the fields they actually carry (for example Aadhaar / PAN / Voter ID have no
+// expiry date, so they are never penalised for a missing expiry).
 
-// 1. Indian Passport Format Check (1-2 letters + 7 digits, e.g., Z1234567 / AB1234567)
+// --- Aadhaar uses the Verhoeff checksum on its 12-digit number ---
+const VERHOEFF_D = [
+  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
+  [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+  [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
+  [4, 0, 1, 2, 3, 9, 5, 6, 7, 8],
+  [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+  [6, 5, 9, 8, 7, 1, 0, 4, 3, 2],
+  [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
+  [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+  [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+];
+const VERHOEFF_P = [
+  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  [1, 5, 7, 6, 2, 8, 3, 0, 9, 4],
+  [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
+  [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
+  [9, 4, 5, 3, 1, 2, 6, 8, 7, 0],
+  [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+  [2, 7, 9, 3, 8, 0, 6, 4, 1, 5],
+  [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
+];
+const VERHOEFF_INV = [0, 4, 3, 2, 1, 5, 6, 7, 8, 9];
+
+// Verhoeff checksum: true when the final 12th digit makes the check validate.
+function verhoeffValidate(num) {
+  const digits = String(num).replace(/\D/g, "");
+  if (!/^\d{12}$/.test(digits)) return false;
+  let c = 0;
+  const reversed = digits.split("").reverse();
+  for (let i = 0; i < reversed.length; i++) {
+    c = VERHOEFF_D[c][VERHOEFF_P[i % 8][Number(reversed[i])]];
+  }
+  return c === 0;
+}
+
+// --- Per-document-type profile ---------------------------------------------
+const DOC_TYPES = {
+  PASSPORT: {
+    code: "PASSPORT",
+    label: "Passport",
+    numberLabel: "Passport Number",
+    title: "PASSPORT VERIFICATION",
+    slug: "passport",
+    numberPattern: /^[A-Z]{1,2}\d{7}$/,
+    checksum: null,
+    requiresExpiry: true,
+    requiresNationality: true,
+    requiresGender: true,
+  },
+  AADHAAR: {
+    code: "AADHAAR",
+    label: "Aadhaar",
+    numberLabel: "Aadhaar Number",
+    title: "AADHAAR VERIFICATION",
+    slug: "aadhaar",
+    numberPattern: /^\d{12}$/,
+    checksum: verhoeffValidate,
+    requiresExpiry: false,
+    requiresNationality: false,
+    requiresGender: true,
+  },
+  PAN: {
+    code: "PAN",
+    label: "PAN",
+    numberLabel: "PAN Number",
+    title: "PAN VERIFICATION",
+    slug: "pan",
+    numberPattern: /^[A-Z]{5}\d{4}[A-Z]$/,
+    checksum: null,
+    requiresExpiry: false,
+    requiresNationality: false,
+    requiresGender: false,
+  },
+  VOTER_ID: {
+    code: "VOTER_ID",
+    label: "Voter ID",
+    numberLabel: "EPIC Number",
+    title: "VOTER ID VERIFICATION",
+    slug: "voter-id",
+    numberPattern: /^[A-Z]{3}\d{7}$/,
+    checksum: null,
+    requiresExpiry: false,
+    requiresNationality: false,
+    requiresGender: true,
+  },
+};
+
+// Normalise whatever the client sent (code or casual label) to a known code.
+function normalizeDocumentType(value) {
+  const s = String(value || "").toUpperCase().trim();
+  if (/AADHAAR|UIDAI|12.?DIGIT/.test(s)) return "AADHAAR";
+  if (/(^|[\s-])PAN([\s-]|$)/.test(s) || /PAN CARD/.test(s)) return "PAN";
+  if (/VOTER|EPIC|ELECTOR/.test(s)) return "VOTER_ID";
+  if (/PASS|NATION|RESIDENC|DRIV/.test(s)) return "PASSPORT";
+  return "PASSPORT";
+}
+
+function documentTypeMeta(value) {
+  return DOC_TYPES[normalizeDocumentType(value)] || DOC_TYPES.PASSPORT;
+}
+
+// --- Document number check (pattern + optional checksum) -------------------
+function validateDocumentNumber(docNum, meta) {
+  const normalized = String(docNum || "").replace(/\s+/g, "").toUpperCase();
+  if (!normalized) return "missing";
+  if (!meta.numberPattern.test(normalized)) return "invalid";
+  if (meta.checksum && !meta.checksum(normalized)) return "invalid";
+  return "valid";
+}
+
+// Kept for backwards compatibility with older importers.
 function validatePassportNumber(docNum) {
   if (!docNum) return "missing";
   const indianPassportRegex = /^[A-Z]{1,2}\d{7}$/;
@@ -53,35 +169,43 @@ function validateNationality(nationality) {
 }
 
 // ==========================================
-// STEPS 6 & 7: RISK ENGINE & VERDICT LOGIC
+// RISK ENGINE & VERDICT LOGIC
 // ==========================================
 
-function calculateRiskScore({ documentNumber, expiryDate, dob, gender, nationality, faceScore, isBlacklisted, tamperScore = 0 }) {
+function calculateRiskScore({ documentNumber, expiryDate, dob, gender, nationality, faceScore, isBlacklisted, tamperScore = 0, documentType = "PASSPORT" }) {
+  const meta = documentTypeMeta(documentType);
+
   let validationErrors = 0;
   let tamperingFlagsCount = 0;
   let faceMismatchScore = 0;
   const flags = [];
   const missingFields = [];
 
-  const passportNum = validatePassportNumber(documentNumber);
+  const docNum = validateDocumentNumber(documentNumber, meta);
   const expiry = validateExpiryDate(expiryDate);
   const birth = validateDOB(dob);
   const gen = validateGender(gender);
   const nat = validateNationality(nationality);
 
   // --- Category 1: Validation Rules (40% Weight Category) ---
-  if (passportNum === "invalid") {
+  if (docNum === "invalid") {
     validationErrors += 20;
-    flags.push("INVALID_PASSPORT_FORMAT");
-  } else if (passportNum === "missing") {
-    missingFields.push("Passport Number");
+    flags.push("INVALID_DOCUMENT_FORMAT");
+    if (meta.code === "AADHAAR" && /^\d{12}$/.test(String(documentNumber || "").replace(/\s+/g, ""))) {
+      flags.push("AADHAAR_CHECKSUM_FAILED");
+    }
+  } else if (docNum === "missing") {
+    missingFields.push(meta.numberLabel);
   }
 
-  if (expiry === "invalid") {
-    validationErrors += 20;
-    flags.push("EXPIRED_DOCUMENT");
-  } else if (expiry === "missing") {
-    missingFields.push("Expiry Date");
+  // Expiry only applies to document types that actually carry one.
+  if (meta.requiresExpiry) {
+    if (expiry === "invalid") {
+      validationErrors += 20;
+      flags.push("EXPIRED_DOCUMENT");
+    } else if (expiry === "missing") {
+      missingFields.push("Expiry Date");
+    }
   }
 
   if (birth === "invalid") {
@@ -91,18 +215,22 @@ function calculateRiskScore({ documentNumber, expiryDate, dob, gender, nationali
     missingFields.push("Date of Birth");
   }
 
-  if (gen === "invalid") {
-    validationErrors += 20;
-    flags.push("INVALID_GENDER_CODE");
-  } else if (gen === "missing") {
-    missingFields.push("Gender");
+  if (meta.requiresGender) {
+    if (gen === "invalid") {
+      validationErrors += 20;
+      flags.push("INVALID_GENDER_CODE");
+    } else if (gen === "missing") {
+      missingFields.push("Gender");
+    }
   }
 
-  if (nat === "invalid") {
-    validationErrors += 20;
-    flags.push("UNSUPPORTED_NATIONALITY");
-  } else if (nat === "missing") {
-    missingFields.push("Nationality");
+  if (meta.requiresNationality) {
+    if (nat === "invalid") {
+      validationErrors += 20;
+      flags.push("UNSUPPORTED_NATIONALITY");
+    } else if (nat === "missing") {
+      missingFields.push("Nationality");
+    }
   }
 
   // --- Category 2: Blacklist + Forensic/Tamper Check (40% Weight Category) ---
@@ -146,10 +274,10 @@ function calculateRiskScore({ documentNumber, expiryDate, dob, gender, nationali
   }
 
   // A *readable but defective* document must also not auto-approve: an expired
-  // or blacklisted passport, an invalid document number, a tampered image, or
+  // or blacklisted document, an invalid document number, a tampered image, or
   // a biometric mismatch all need a human — floor any such scan at REVIEW.
   const hardDefect =
-    flags.some((f) => ["EXPIRED_DOCUMENT", "BLACKLISTED_DOCUMENT", "INVALID_PASSPORT_FORMAT", "LOW_FACE_MATCH_SCORE", "UNDERAGE_OR_INVALID_DOB"].includes(f)) ||
+    flags.some((f) => ["EXPIRED_DOCUMENT", "BLACKLISTED_DOCUMENT", "INVALID_DOCUMENT_FORMAT", "LOW_FACE_MATCH_SCORE", "UNDERAGE_OR_INVALID_DOB"].includes(f)) ||
     tamperScore > 0;
   if (hardDefect) {
     finalRiskScore = Math.max(finalRiskScore, 31);
@@ -168,6 +296,11 @@ function calculateRiskScore({ documentNumber, expiryDate, dob, gender, nationali
 }
 
 module.exports = {
+  DOC_TYPES,
+  verhoeffValidate,
+  normalizeDocumentType,
+  documentTypeMeta,
+  validateDocumentNumber,
   validatePassportNumber,
   validateExpiryDate,
   validateDOB,

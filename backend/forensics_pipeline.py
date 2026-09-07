@@ -363,7 +363,99 @@ def parse_passport_text(raw_text):
     return fields
 
 
-def run_ocr(image_path):
+AADHAAR_COMPACT_RE = re.compile(r"(?<!\d)\d{12}(?!\d)")
+AADHAAR_GROUPED_RE = re.compile(r"\d{4}[- ]?\d{4}[- ]?\d{4}")
+# PAN: 5 letters + 4 digits + 1 letter. The 4-digit run anchors the match, so
+# it works flush against a "PAN" label or "DOB" text (no word boundary needed).
+PAN_RE = re.compile(r"[A-Z]{5}[0-9]{4}[A-Z](?![0-9])")
+# EPIC: 3 letters + 7 digits, again flush-to-label tolerant.
+EPIC_RE = re.compile(r"(?<![0-9])[A-Z]{3}[0-9]{7}(?![0-9])")
+
+
+def _extract_gender(raw_text, compact):
+    upper = raw_text.upper()
+    # Check the female tokens before the male ones — "FEMALE" contains "MALE".
+    if "FEMALE" in upper or "स्ट्री" in upper.upper() or "STREE" in upper:
+        return "F"
+    if "MALE" in upper or "पुरुष" in upper.upper() or "PURUSH" in upper:
+        return "M"
+    m = re.search(r"\d{5,6}[MFX]", compact)
+    if m:
+        return m.group(0)[-1]
+    return None
+
+
+def parse_aadhaar_text(raw_text):
+    """Extracts Aadhaar fields: 12-digit UIDAI number, DOB and gender."""
+    fields = {}
+    compact = re.sub(r"\s+", "", raw_text)
+
+    aadhaar = AADHAAR_COMPACT_RE.search(compact)
+    if aadhaar:
+        fields["DocumentNumber"] = {"value": aadhaar.group(0)}
+    else:
+        grouped = AADHAAR_GROUPED_RE.search(raw_text)
+        if grouped:
+            fields["DocumentNumber"] = {
+                "value": re.sub(r"[^0-9]", "", grouped.group(0))
+            }
+
+    dob = _date_near(raw_text, ["DOB", "DATE OF BIRTH", "BIRTH", "BORN"])
+    if not dob:
+        dm = DATE_RE.search(raw_text)
+        if dm:
+            dob = normalize_date(dm.group(0))
+    if dob:
+        fields["DateOfBirth"] = {"value": dob}
+
+    gender = _extract_gender(raw_text, compact)
+    if gender:
+        fields["Gender"] = {"value": gender}
+    return fields
+
+
+def parse_pan_text(raw_text):
+    """Extracts PAN fields: the PAN identifier and the holder's DOB."""
+    fields = {}
+    compact = re.sub(r"\s+", "", raw_text).upper()
+    m = PAN_RE.search(compact)
+    if m:
+        fields["DocumentNumber"] = {"value": m.group(0)}
+    dob = _date_near(raw_text, ["DOB", "DATE OF BIRTH", "BIRTH"])
+    if dob:
+        fields["DateOfBirth"] = {"value": dob}
+    return fields
+
+
+def parse_voter_id_text(raw_text):
+    """Extracts Voter ID fields: the EPIC number, DOB and gender."""
+    fields = {}
+    compact = re.sub(r"\s+", "", raw_text).upper()
+    m = EPIC_RE.search(compact)
+    if m:
+        fields["DocumentNumber"] = {"value": m.group(0)}
+    dob = _date_near(raw_text, ["DOB", "DATE OF BIRTH", "BIRTH", "BORN"])
+    if dob:
+        fields["DateOfBirth"] = {"value": dob}
+    gender = _extract_gender(raw_text, compact)
+    if gender:
+        fields["Gender"] = {"value": gender}
+    return fields
+
+
+def parse_document_text(raw_text, document_type="PASSPORT"):
+    """Dispatch OCR text to the parser matching the selected document type."""
+    dt = (document_type or "PASSPORT").upper()
+    if dt == "AADHAAR":
+        return parse_aadhaar_text(raw_text)
+    if dt == "PAN":
+        return parse_pan_text(raw_text)
+    if dt == "VOTER_ID":
+        return parse_voter_id_text(raw_text)
+    return parse_passport_text(raw_text)
+
+
+def run_ocr(image_path, document_type="PASSPORT"):
     """Tesseract OCR with graceful fallback when tesseract/pytesseract is unavailable."""
     try:
         import cv2
@@ -383,7 +475,7 @@ def run_ocr(image_path):
         return {
             "ok": True,
             "raw_text": raw_text.strip(),
-            "fields": parse_passport_text(raw_text),
+            "fields": parse_document_text(raw_text, document_type),
         }
     except Exception as exc:
         return {"ok": False, "raw_text": "", "fields": {}, "error": str(exc)}
@@ -641,15 +733,18 @@ def save_annotated_image(image_path, tamper_result, ai_result, face_result):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Passport forensic pipeline")
+    parser = argparse.ArgumentParser(description="Identity document forensic pipeline")
     parser.add_argument("--document", required=True, help="Path to document image")
     parser.add_argument("--selfie", default=None, help="Optional path to selfie image")
+    parser.add_argument("--document-type", default="PASSPORT",
+                        help="Document type: PASSPORT, AADHAAR, PAN or VOTER_ID")
     parser.add_argument("--no-annotate", action="store_true",
                         help="Skip generating the annotated evidence image")
     args = parser.parse_args()
 
     load_env()
 
+    document_type = (args.document_type or "PASSPORT").upper()
     tamper_result = run_tamper_detection(args.document)
     ai_result = run_ai_detection(args.document)
     face_result = run_face_match(args.document, args.selfie)
@@ -661,7 +756,8 @@ def main():
 
     result = {
         "document": args.document,
-        "ocr": run_ocr(args.document),
+        "documentType": document_type,
+        "ocr": run_ocr(args.document, document_type),
         "ai": ai_result,
         "tamper": tamper_result,
         "face": face_result,

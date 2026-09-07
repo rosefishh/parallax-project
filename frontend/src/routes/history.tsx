@@ -6,6 +6,7 @@ import { AppShell, PageTitle } from "@/components/AppShell";
 import { VerdictBadge } from "@/components/VerdictBadge";
 import { LoadingState, ErrorState, EmptyState } from "@/components/AsyncState";
 import { fetchScans, downloadPdfReport, formatDate } from "@/api";
+import { documentTypeMeta } from "@/lib/documentTypes";
 
 export const Route = createFileRoute("/history")({
   head: () => ({
@@ -163,7 +164,7 @@ function HistoryPage() {
                     </td>
                     <td className="py-3 pr-4">
                       <span className="rounded bg-success-soft px-1.5 py-0.5 text-[10px] font-bold text-success">
-                        {scan.documentType}
+                        {documentTypeMeta(scan.documentType).label}
                       </span>
                     </td>
                     <td className="py-3 pr-4">
