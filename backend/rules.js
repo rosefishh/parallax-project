@@ -149,7 +149,7 @@ function calculateRiskScore({ documentNumber, expiryDate, dob, gender, nationali
   // or blacklisted passport, an invalid document number, a tampered image, or
   // a biometric mismatch all need a human — floor any such scan at REVIEW.
   const hardDefect =
-    flags.some((f) => ["EXPIRED_DOCUMENT", "BLACKLISTED_DOCUMENT", "INVALID_PASSPORT_FORMAT", "LOW_FACE_MATCH_SCORE"].includes(f)) ||
+    flags.some((f) => ["EXPIRED_DOCUMENT", "BLACKLISTED_DOCUMENT", "INVALID_PASSPORT_FORMAT", "LOW_FACE_MATCH_SCORE", "UNDERAGE_OR_INVALID_DOB"].includes(f)) ||
     tamperScore > 0;
   if (hardDefect) {
     finalRiskScore = Math.max(finalRiskScore, 31);

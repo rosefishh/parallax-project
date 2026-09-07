@@ -27,11 +27,28 @@ DATE_RE = re.compile(r"\b\d{2}[/\.-]\d{2}[/\.-]\d{4}\b")
 # The leading position of each 6-digit date may hold an ICAO swap character
 # (e.g. Z for a 20xx century) instead of a digit, so tolerate it there.
 MRZ_RECORD_RE = re.compile(r"([A-Z]{3})([0-9A-Z][0-9]{5})[0-9A-Z]?([MFX])([0-9A-Z][0-9]{5})[0-9A-Z]?")
+# Tolerant variant: real OCR drops check digits and inserts stray filler chars
+# inside the detail line (e.g. "$" glue or a letter picked up from the country
+# code), which breaks the strict fixed-position layout above. This allows a few
+# filler/glue chars between the issuing country, DOB, sex and expiry fields.
+MRZ_TOLERANT_RE = re.compile(
+    r"([A-Z]{3})(?:[0-9A-Z<]{0,3})([0-9A-Z][0-9]{5})(?:[0-9A-Z]?)([MFX])(?:[0-9A-Z]?)([0-9A-Z][0-9]{5})"
+)
 MRZ_GENDER_RE = re.compile(r"\d{5,6}[MFX]")
 # When an MRZ date carries a letter in its leading (decade) position, map it to
 # a digit before applying the normal 19xx/20xx rule. Z is "2" in practice (e.g.
 # "Z80807" -> 2028-08-07); keep entries we have actually observed.
 SWAP_DIGIT = {"Z": "2", "M": "2", "F": "2"}
+# Printed-zone digit repair: on small embossed passport cells Tesseract reads a
+# numeral as its visually closest letter (0->p/o, 1->l/I, 5->s, 8->B/g). This
+# table is ONLY consulted for a date cell that otherwise fails strict parsing.
+PRINTED_DIGIT_REPAIR = {
+    "O": "0", "P": "0", "Q": "0",
+    "I": "1", "L": "1",
+    "Z": "2",
+    "S": "5",
+    "G": "8", "B": "8",
+}
 def normalize_date(value):
     """Return an unambiguous YYYY-MM-DD string from DD-MM-YYYY or YYMMDD input.
 
@@ -96,6 +113,63 @@ def _date_near(raw_text, labels, search_radius=240):
     return None
 
 
+def _repair_printed_date_value(cell_text):
+    """Recover a mangled printed date value like 'ps/08/2018'.
+
+    Tolerates 1-2 OCR-misread letters in the day/month slots by mapping them
+    through PRINTED_DIGIT_REPAIR, and tolerates a stray duplicated digit. Only
+    fires when a clear 4-digit year is visible in the cell, so it can never
+    invent a date from pure noise. Returns normalized 'YYYY-MM-DD' or None.
+    """
+    if not cell_text:
+        return None
+    m = DATE_RE.search(cell_text)
+    if m:
+        return normalize_date(m.group(0))
+    if not re.search(r"\d{4}", cell_text):
+        return None
+    repaired = "".join(
+        PRINTED_DIGIT_REPAIR.get(c.upper(), c) if c.isalpha() else c
+        for c in cell_text.strip()
+    )
+    digits = re.findall(r"\d", repaired)
+    if len(digits) < 8:
+        return None
+    year = "".join(digits[-4:])
+    core = digits[:-4]
+    day = core[0] + core[1]
+    cands = [f"{core[0]}{core[1]}/{core[2]}{core[3]}/{year}"]
+    if len(core) >= 5:
+        cands.append(f"{core[0]}{core[1]}/{core[3]}{core[4]}/{year}")
+    for candidate in cands:
+        parsed = normalize_date(candidate)
+        if parsed:
+            return parsed
+    return None
+
+
+def _recover_birth_date(raw_text, expiry):
+    """Best-effort recovery of a DOB cell whose strict/plain parsing failed.
+
+    Looks on the same printed row as a clean date (usually the expiry date) for
+    another date-like token - the passport prints DOB and expiry side by side -
+    and repairs it. Never returns the expiry value itself.
+    """
+    if not expiry:
+        return None
+    for line in raw_text.splitlines():
+        toks = re.split(r"\s+", line.strip())
+        if not any(t for t in toks if re.search(r"\d{2}/\d{2}/\d{4}", t)):
+            continue
+        for tok in toks:
+            if normalize_date(tok) == expiry:
+                continue
+            repaired = _repair_printed_date_value(tok)
+            if repaired:
+                return repaired
+    return None
+
+
 def _mitigate_ocr_noise(s):
     """Drop OCR filler characters and collapse noisy repeated-char trains.
 
@@ -132,8 +206,9 @@ def _extract_document_number(compact):
     """Pick the passport number (1-2 letters + 7 digits) from OCR text.
 
     The MRZ line 2 places the document number immediately after line 1, so we
-    prefer a candidate found right after "P<IND". Only when no MRZ exists do we
-    fall back to a word-bounded search of the whole text.
+    scan left to right for the first candidate past the "P<CC" header. Later
+    7-digit runs are false-positive territory (the MRZ's own expiry field reads
+    like "M3001020"), so the LOSBY name lookup favours the leftmost match.
     """
     upper_compact = compact.upper()
     mitigated = _mitigate_ocr_noise(upper_compact)
@@ -141,9 +216,10 @@ def _extract_document_number(compact):
     mrz_pos = re.search(r"P<[A-Z]{3}", mitigated)
     if mrz_pos:
         window = mitigated[mrz_pos.end():mrz_pos.end() + 72]
-        from_mrz = _best_docnum_candidates(window)
-        if from_mrz:
-            return from_mrz
+        for dm in re.finditer(r"(?=([A-Z]{1,2})([0-9]{7}))", window):
+            letters, digits = dm.group(1), dm.group(2)
+            if len(set(digits)) > 1:
+                return letters + digits
 
     boundary = re.search(r"\b[A-Z]{1,2}[0-9]{7}\b", upper_compact)
     if boundary and len(set(boundary.group(0)[-7:])) > 1:
@@ -197,6 +273,43 @@ def _configure_tesseract():
     return False
 
 
+def _parse_mrz_detail(compact, docnum=None):
+    """Extract (dob_code, gender_char, exp_code) from the MRZ detail line.
+
+    Preferred path decodes the fixed positions that follow a verified document
+    number on the detail line: <CHECK>CCCDOB6CHECKSEXEXP6CHECK. This avoids
+    misaligned reads when stray filler chars sit near the date fields (a loose
+    regex may steal a real digit from e.g. "300102"). Falls back to the tolerant
+    layout regex on the noise-mitigated text when no docnum anchor exists.
+    """
+    upper = _mitigate_ocr_noise(compact).upper()
+    window = upper
+    mrz_pos = re.search(r"P<[A-Z]{3}", upper)
+    if mrz_pos:
+        window = upper[mrz_pos.end():mrz_pos.end() + 96]
+
+    if docnum:
+        idx = window.find(docnum)
+        if idx != -1:
+            tail = window[idx + len(docnum): idx + len(docnum) + 22]
+            m = re.match(
+                r"<([0-9A-Z])([A-Z]{3})([0-9A-Z][0-9]{5})([0-9A-Z])([MFX])([0-9A-Z][0-9]{5})",
+                tail,
+            )
+            if m:
+                dob_code = m.group(3)
+                gender_char = m.group(5)
+                exp_code = m.group(6)
+                return dob_code, gender_char, exp_code
+
+    for pattern in (MRZ_TOLERANT_RE, MRZ_RECORD_RE):
+        m = pattern.search(window)
+        if m:
+            _nat, dob_code, gender_char, exp_code = m.groups()
+            return dob_code, gender_char, exp_code
+    return None, None, None
+
+
 def parse_passport_text(raw_text):
     """Extracts structured passport fields from raw OCR text via regex.
 
@@ -218,15 +331,19 @@ def parse_passport_text(raw_text):
     # fixed-position extraction. When the MRZ decoding is not plausible (or
     # absent), fall back to label-guided plain dates.
     compact2 = compact
+    dob_code, gender_char, exp_code = _parse_mrz_detail(compact2, docnum)
+    dob_candidates = [normalize_date(dob_code)] if dob_code else []
+    exp_candidates = [normalize_date(exp_code)] if exp_code else []
+    # Strict-layout fallback for clean MRZs the tolerant pass might skip.
     mrz = MRZ_RECORD_RE.search(compact2)
-    dob_candidates = []
-    exp_candidates = []
     if mrz:
-        _nat, dob_code, _g, exp_code = mrz.groups()
-        dob_candidates.append(normalize_date(dob_code))
-        exp_candidates.append(normalize_date(exp_code))
-    dob = _best_date(dob_candidates, raw_text, ["DATE OF BIRTH", "BIRTH DATE"])
+        _nat, strict_dob, _g, strict_exp = mrz.groups()
+        dob_candidates.append(normalize_date(strict_dob))
+        exp_candidates.append(normalize_date(strict_exp))
     exp = _best_date(exp_candidates, raw_text, ["DATE OF EXPIRY", "DATE OF EXPIRATION", "EXPIRY", "EXPIRES"])
+    dob = _best_date(dob_candidates, raw_text, ["DATE OF BIRTH", "BIRTH DATE", "BORN"])
+    if not dob:
+        dob = _recover_birth_date(raw_text, exp)
 
     if dob:
         fields["DateOfBirth"] = {"value": dob}
@@ -234,9 +351,12 @@ def parse_passport_text(raw_text):
         fields["DateOfExpiration"] = {"value": exp}
 
     # Gender: single M/F/X from the MRZ sex field.
-    g = MRZ_GENDER_RE.search(compact2)
-    if g:
-        fields["Gender"] = {"value": g.group(0)[-1]}
+    if gender_char:
+        fields["Gender"] = {"value": gender_char}
+    else:
+        g = MRZ_GENDER_RE.search(compact2)
+        if g:
+            fields["Gender"] = {"value": g.group(0)[-1]}
 
     if "IND" in raw_text or "INDIA" in raw_text:
         fields["CountryRegion"] = {"value": "IND"}
