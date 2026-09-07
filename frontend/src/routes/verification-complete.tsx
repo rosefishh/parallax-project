@@ -99,7 +99,9 @@ function ResultCard({ scanId }: { scanId: string }) {
   const faceInfo = forensics?.face;
   const faceMatched = faceInfo?.matched ?? scan.faceScore >= 0.65;
   const faceSkipped = faceInfo?.skipped ?? (scan.faceScore >= 0.99 && !faceInfo);
-  const facePercent = Math.round((faceInfo?.face_score ?? faceInfo?.faceScore ?? scan.faceScore * 100) );
+  const facePercent = Math.round(
+    (faceInfo?.face_score ?? faceInfo?.faceScore ?? scan.faceScore) * 100,
+  );
 
   const curated = [
     ["Verification ID", scan.id.slice(0, 8)],
@@ -113,18 +115,18 @@ function ResultCard({ scanId }: { scanId: string }) {
   ];
 
   const findings = [
-    { label: "Document Validation", value: (validation.passportFormatValid ?? false) ? "Passed" : "Failed" },
+    { label: "Document Validation", value: (validation.passportFormatValid ?? false) ? "Passed" : "Failed", tone: (validation.passportFormatValid ?? false) ? "good" : "bad" },
     {
       label: "Face Match",
       value: faceSkipped ? "Not Performed" : faceMatched ? `${facePercent}% Match` : `${facePercent}% Mismatch`,
-      failed: !faceSkipped && !faceMatched,
+      tone: faceSkipped ? "neutral" : faceMatched ? "good" : "bad",
     },
     {
       label: "Blacklist Status",
       value: validation.isBlacklisted ? "Flagged" : "Clear",
-      failed: !!validation.isBlacklisted,
+      tone: validation.isBlacklisted ? "bad" : "good",
     },
-    { label: "Tampering Detected", value: flags.length > 0 ? "Yes" : "None Found", failed: flags.length > 0 },
+    { label: "Tampering Detected", value: flags.length > 0 ? "Yes" : "None Found", tone: flags.length > 0 ? "bad" : "good" },
   ];
 
   return (
@@ -183,20 +185,45 @@ function ResultCard({ scanId }: { scanId: string }) {
             Visual proof from the forensic engine — highlighted regions mark suspected tampering
             and AI artifacts.
           </p>
-          <img
-            src={resolveApiUrl(scan.evidenceImageUrl) ?? undefined}
-            alt="Annotated document with forensic highlights"
-            className="mt-3 w-full rounded-lg border border-border bg-muted"
-          />
+          <div
+            className={`relative mt-3 overflow-hidden rounded-lg border-4 ${
+              faceSkipped ? "border-border" : faceMatched ? "border-success" : "border-destructive"
+            }`}
+          >
+            <img
+              src={resolveApiUrl(scan.evidenceImageUrl) ?? undefined}
+              alt="Annotated document with forensic highlights"
+              className="w-full bg-muted"
+            />
+            <span
+              className={`absolute right-3 top-3 rounded-md px-2 py-1 text-[11px] font-bold text-white ${
+                faceSkipped
+                  ? "bg-muted-foreground"
+                  : faceMatched
+                    ? "bg-success"
+                    : "bg-destructive"
+              }`}
+            >
+              Face Match: {faceSkipped ? "Not Performed" : faceMatched ? `${facePercent}% Match` : `${facePercent}% Mismatch`}
+            </span>
+          </div>
         </div>
       )}
 
       <p className="label-caps mt-8">Verification Findings</p>
       <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {findings.map((f) => (
-          <div key={f.label}>
-            <p className="text-[11px] text-muted-foreground">{f.label}</p>
-            <p className={`text-sm font-semibold ${f.failed ? "text-destructive" : "text-success"}`}>
+          {findings.map((f) => (
+            <div key={f.label}>
+              <p className="text-[11px] text-muted-foreground">{f.label}</p>
+              <p
+                className={`text-sm font-semibold ${
+                  f.tone === "bad"
+                    ? "text-destructive"
+                    : f.tone === "neutral"
+                      ? "text-muted-foreground"
+                      : "text-success"
+                }`}
+              >
               • {f.value}
             </p>
           </div>
