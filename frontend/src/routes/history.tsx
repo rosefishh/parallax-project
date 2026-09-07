@@ -136,8 +136,15 @@ function HistoryPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left">
-                  {["Verification ID", "Document", "Verdict", "Risk Score", "Date", "Actions"].map(
-                    (h) => (
+                  {[
+                    "Verification ID",
+                    "Document",
+                    "Document Type",
+                    "Verdict",
+                    "Risk Score",
+                    "Date",
+                    "Actions",
+                  ].map((h) => (
                       <th key={h} className="label-caps whitespace-nowrap py-2 pr-4">
                         {h}
                       </th>
@@ -153,7 +160,9 @@ function HistoryPage() {
                     </td>
                     <td className="py-3 pr-4 font-semibold">
                       {String(scan.extractedData?.documentNumber ?? (scan.documentType || "Passport"))}
-                      <span className="ml-2 rounded bg-success-soft px-1.5 py-0.5 text-[10px] font-bold text-success">
+                    </td>
+                    <td className="py-3 pr-4">
+                      <span className="rounded bg-success-soft px-1.5 py-0.5 text-[10px] font-bold text-success">
                         {scan.documentType}
                       </span>
                     </td>
