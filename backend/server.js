@@ -325,6 +325,41 @@ function drawDetailRow(doc, label, value, y, fallback = "Not readable") {
   return y + 26;
 }
 
+// Colour palette used for status values in the audit certificate.
+const TONE_COLORS = Object.freeze({
+  good: "#15803d",
+  bad: "#dc2626",
+  warn: "#d97706",
+  neutral: "#64748b",
+  default: "#0f172a",
+});
+
+// Numbered section heading with a small accent chip for the certificate.
+function drawSectionHead(doc, num, title, accent, y) {
+  doc.circle(57, y + 8, 9).fill(accent);
+  doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(9)
+    .text(String(num), 50, y + 2, { width: 14, align: "center" });
+  doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(11)
+    .text(title, 76, y + 1, { width: 420 });
+  return y + 26;
+}
+
+// Two-column label/value panel with a soft zebra card background.
+function drawDataRow(doc, cells, y) {
+  doc.rect(48, y, 500, 30).fill("#f8fafc");
+  cells.slice(0, 2).forEach((c, i) => {
+    const x = 62 + i * 243;
+    doc.font("Helvetica-Bold").fontSize(7.5).fillColor("#94a3b8")
+      .text(String(c.label).toUpperCase(), x, y + 4, { width: 220 });
+    doc.font("Helvetica").fontSize(9.5)
+      .fillColor(TONE_COLORS[c.tone || "default"])
+      .text(c.value || "—", x, y + 15, { width: 220 });
+  });
+  doc.strokeColor("#e2e8f0").lineWidth(0.8)
+    .moveTo(48, y + 30).lineTo(548, y + 30).stroke();
+  return y + 31;
+}
+
 // Human-readable list of suspicious findings.
 function describeFlags(flags) {
   if (!flags || flags.length === 0) return [];
@@ -370,104 +405,142 @@ app.get("/api/scans/:id/pdf", async (req, res) => {
     const facePerformed = !(faceScore >= 0.999) || hasLowFaceFlag;
     const generatedAt = new Date().toLocaleString("en-IN", { dateStyle: "long", timeStyle: "short" });
 
+    const safeRisk = Math.max(0, Math.min(100, Number(scan.riskScore) || 0));
+    const fmtTone = validation.passportFormatValid === false ? "bad" : validation.passportFormatValid === true ? "good" : "neutral";
+    const expTone = validation.isExpired ? "bad" : extracted.expiryDate ? "good" : "neutral";
+    const blackTone = validation.isBlacklisted ? "bad" : "good";
+    const faceTone = hasLowFaceFlag ? "bad" : facePerformed ? "good" : "neutral";
+
     // ── Header band ───────────────────────────────────────────────
-    doc.rect(0, 0, doc.page.width, 84).fill("#0f172a");
+    doc.rect(0, 0, doc.page.width, 88).fill("#0f172a");
+    doc.rect(0, 88, doc.page.width, 5).fill(colors.band);
+    doc.roundedRect(48, 18, 52, 54, 10).fill(colors.band);
+    doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(18)
+      .text("SN", 48, 30, { width: 52, align: "center" });
     doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(16)
-      .text("PASSPORT VERIFICATION AUDIT CERTIFICATE", 0, 20, { align: "center", width: doc.page.width });
-    doc.font("Helvetica").fontSize(9).fillColor("#cbd5e1")
-      .text("Government of India — Automated Identity & Document Screening Engine", 0, 44, { align: "center", width: doc.page.width });
-    doc.font("Helvetica").fontSize(8).fillColor("#94a3b8")
-      .text(`Report generated: ${generatedAt}`, 0, 62, { align: "center", width: doc.page.width });
+      .text("PASSPORT VERIFICATION", 114, 24, { width: 330 });
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(colors.band)
+      .text("AUDIT CERTIFICATE", 114, 44, { width: 330 });
+    doc.font("Helvetica").fontSize(8).fillColor("#cbd5e1")
+      .text("Government of India — Automated Identity & Document Screening Engine", 114, 64, { width: 330 });
+    doc.font("Helvetica-Bold").fontSize(8).fillColor("#94a3b8")
+      .text("CERTIFICATE ID", 396, 24, { width: 150, align: "right" });
+    doc.font("Helvetica-Bold").fontSize(11).fillColor("#ffffff")
+      .text(scan.id.slice(0, 13).toUpperCase(), 396, 36, { width: 150, align: "right" });
+    doc.font("Helvetica").fontSize(8).fillColor("#cbd5e1")
+      .text(`Generated: ${generatedAt}`, 396, 52, { width: 150, align: "right" });
 
-    // ── Verdict banner ────────────────────────────────────────────
-    let y = 104;
-    doc.rect(48, y, 468, 52).fill(colors.band);
-    doc.roundedRect(48, y, 468, 52, 4).fill(colors.band);
-    doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(13)
-      .text(`VERDICT  •  ${verdictLabel}`, 70, y + 9, { width: 300 });
-    doc.fontSize(22)
-      .text(`${scan.riskScore} / 100`, 0, y + 8, { align: "right", width: doc.page.width - 70 });
-    doc.font("Helvetica").fontSize(8).fillColor("#f1f5f9")
-      .text("RISK SCORE", 0, y + 40, { align: "right", width: doc.page.width - 70 });
-
-    y += 72;
+    // ── Verdict banner with risk gauge ────────────────────────────
+    let y = 112;
+    doc.roundedRect(48, y, 500, 62, 8).fill(colors.band);
+    doc.opacity(0.25).rect(68, y + 48, 300, 4).fill("#ffffff");
+    doc.opacity(0.95)
+      .rect(68, y + 48, Math.max(8, Math.round(300 * (safeRisk / 100))), 4).fill("#ffffff");
+    doc.opacity(1);
+    doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(19)
+      .text(verdictLabel, 68, y + 10, { width: 330 });
+    doc.font("Helvetica").fontSize(8).fillColor("#f8fafc")
+      .text("Automated verdict with explainable risk indicators", 68, y + 33, { width: 330 });
+    doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(27)
+      .text(`${safeRisk}`, 0, y + 4, { align: "right", width: doc.page.width - 84 });
+    doc.font("Helvetica-Bold").fontSize(8).fillColor("#f1f5f9")
+      .text("RISK SCORE / 100", 0, y + 38, { align: "right", width: doc.page.width - 84 });
+    y += 84;
 
     // ── 1. Verification Summary ───────────────────────────────────
-    doc.font("Helvetica-Bold").fontSize(11).fillColor("#0f172a")
-      .text("1.  Verification Summary");
-    y += 18;
-    y = drawDetailRow(doc, "Scan ID", scan.id, y, "—");
-    y = drawDetailRow(doc, "Document Type", scan.documentType, y, "—");
-
-    const formatStatus =
-      validation.passportFormatValid === true ? "Valid format" :
-      validation.passportFormatValid === false ? "Format validation failed" :
-      "Not readable";
-    y = drawDetailRow(doc, "Document Number", String(extracted.documentNumber || ""), y);
-    y = drawDetailRow(doc, "Format Check", formatStatus, y, "—");
-
-    const expiryLabel = extracted.expiryDate
-      ? (validation.isExpired ? `${extracted.expiryDate} (Expired)` : `${extracted.expiryDate} (Active)`)
-      : "";
-    y = drawDetailRow(doc, "Expiry Date", extractDate(extracted.expiryDate), y);
-    y = drawDetailRow(doc, "Expiry Status", expiryLabel, y, "Not readable");
-
-    const blacklistStatus = validation.isBlacklisted ? "FLAGGED — on watchlist" : "Clear";
-    y = drawDetailRow(doc, "Blacklist Status", blacklistStatus, y, "—");
-
-    const faceText = facePerformed
-      ? `${Math.round(faceScore * 100)}% match`
-      : "Not performed (no selfie supplied)";
-    const faceStatus = hasLowFaceFlag ? "Low confidence match" : (facePerformed ? "Within threshold" : "Skipped");
-    y = drawDetailRow(doc, "Face Match Score", faceText, y, "—");
-
-    y = drawDetailRow(doc, "Face Match Status", faceStatus, y, "—");
-    y += 8;
+    y = drawSectionHead(doc, 1, "Verification Summary", colors.band, y);
+    y = drawDataRow(doc, [
+      { label: "Scan ID", value: scan.id.slice(0, 13).toUpperCase(), tone: "neutral" },
+      { label: "Document Type", value: String(scan.documentType || "Passport") },
+    ], y);
+    y = drawDataRow(doc, [
+      {
+        label: "Document Number",
+        value: String(extracted.documentNumber || ""),
+        tone: validation.passportFormatValid === false ? "bad" : "default",
+      },
+      {
+        label: "Format Check",
+        value: validation.passportFormatValid === true ? "Valid format" :
+          validation.passportFormatValid === false ? "Format validation failed" : "Not readable",
+        tone: fmtTone,
+      },
+    ], y);
+    y = drawDataRow(doc, [
+      { label: "Expiry Date", value: extractDate(extracted.expiryDate) || "—", tone: expTone === "bad" ? "bad" : "default" },
+      {
+        label: "Expiry Status",
+        value: validation.isExpired ? "Expired" : extracted.expiryDate ? "Active" : "Not readable",
+        tone: expTone,
+      },
+    ], y);
+    y = drawDataRow(doc, [
+      { label: "Blacklist", value: validation.isBlacklisted ? "FLAGGED — ON WATCHLIST" : "Clear", tone: blackTone },
+      {
+        label: "Face Match",
+        value: facePerformed ? `${Math.round(faceScore * 100)}% match` : "Not performed (no selfie)",
+        tone: faceTone,
+      },
+    ], y);
+    y = drawDataRow(doc, [
+      { label: "Face Match Status", value: hasLowFaceFlag ? "Low confidence match" : facePerformed ? "Within threshold" : "Skipped", tone: faceTone },
+      { label: "Engine", value: "SNARE Screening v1.0", tone: "neutral" },
+    ], y);
+    y += 10;
 
     // ── 2. Extracted Document Details ─────────────────────────────
-    doc.font("Helvetica-Bold").fontSize(11).fillColor("#0f172a")
-      .text("2.  Extracted Document Details");
-    y += 18;
-    y = drawDetailRow(doc, "Document Number", String(extracted.documentNumber || ""), y);
-    y = drawDetailRow(doc, "Expiry Date", extractDate(extracted.expiryDate), y);
-    y = drawDetailRow(doc, "Date of Birth", extractDate(extracted.dob), y);
-    y = drawDetailRow(doc, "Gender", extracted.gender ? String(extracted.gender).toUpperCase() : "", y);
-    y = drawDetailRow(doc, "Nationality", String(extracted.nationality || ""), y);
-    y += 8;
+    y = drawSectionHead(doc, 2, "Extracted Document Details", colors.band, y);
+    y = drawDataRow(doc, [
+      { label: "Document Number", value: String(extracted.documentNumber || "") || "—" },
+      { label: "Date of Birth", value: extractDate(extracted.dob) || "—" },
+    ], y);
+    y = drawDataRow(doc, [
+      { label: "Expiry Date", value: extractDate(extracted.expiryDate) || "—" },
+      { label: "Gender", value: extracted.gender ? String(extracted.gender).toUpperCase() : "—" },
+    ], y);
+    y = drawDataRow(doc, [
+      { label: "Nationality", value: String(extracted.nationality || "") || "—" },
+      { label: "Review Status", value: scan.needsReview ? "Flagged for review" : "Auto-cleared", tone: scan.needsReview ? "warn" : "good" },
+    ], y);
+    y += 10;
 
     // ── 3. Findings & Reason Flags ────────────────────────────────
-    doc.font("Helvetica-Bold").fontSize(11).fillColor("#0f172a")
-      .text("3.  Findings & Reason Flags");
-    y += 14;
+    y = drawSectionHead(doc, 3, "Findings & Reason Flags", colors.band, y);
+    const findingsHeight = Math.max(34, findings.length * 18 + 16);
+    doc.rect(48, y, 500, findingsHeight).fill("#f8fafc");
     if (findings.length === 0) {
-      doc.font("Helvetica").fontSize(10).fillColor("#16a34a")
-        .text("• No suspicious indicators were detected. The document passed all automated checks.");
+      doc.circle(62, y + 16, 4).fill("#16a34a");
+      doc.font("Helvetica-Bold").fontSize(9.5).fillColor("#166534")
+        .text("No suspicious indicators were detected. The document passed all automated checks.", 76, y + 8, { width: 460 });
     } else {
-      findings.forEach((line) => {
-        doc.font("Helvetica").fontSize(10).fillColor("#b91c1c");
-        doc.text("•", 48, y, { lineBreak: false, continued: true });
-        doc.fillColor("#0f172a").text(`  ${line}`, 60, y, { width: 456 });
-        y += 16;
+      findings.forEach((line, i) => {
+        doc.circle(62, y + 10 + i * 18, 4).fill("#dc2626");
+        doc.font("Helvetica").fontSize(9).fillColor("#334155")
+          .text(line, 76, y + 3 + i * 18, { width: 460 });
       });
     }
-    y += 12;
+    y += findingsHeight + 6;
 
     // ── Footer seal ───────────────────────────────────────────────
-    if (y > doc.page.height - 120) {
+    if (y > doc.page.height - 170) {
       doc.addPage();
-      y = 60;
+      y = 70;
     }
-    doc.strokeColor("#0f172a").lineWidth(1.5)
-      .moveTo(48, y).lineTo(48 + 468, y).stroke();
-    y += 14;
-    doc.font("Helvetica-Bold").fontSize(9).fillColor("#0f172a")
-      .text(`Audit Confirmation ID:  ${scan.id.slice(0, 8).toUpperCase()}`);
+    doc.strokeColor(colors.border).lineWidth(1.2).moveTo(48, y).lineTo(548, y).stroke();
+    y += 16;
+    doc.roundedRect(48, y, 270, 18, 4).fill("#0f172a");
+    doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(8)
+      .text(`AUDIT CONFIRMATION  ${scan.id.slice(0, 8).toUpperCase()}`, 60, y + 5, { width: 270 });
+    doc.circle(517, y + 9, 11).lineWidth(1.2).strokeColor(colors.band).stroke();
+    doc.fillColor(colors.band).font("Helvetica-Bold").fontSize(6.5)
+      .text("SNARE", 499, y + 5, { width: 36, align: "center" });
+    y += 32;
     doc.font("Helvetica").fontSize(8).fillColor("#64748b")
       .text(
         "This is a computer-generated audit certificate produced by the SNARE screening engine. " +
         "It summarises the automated findings of OCR extraction, document validation, watchlist screening, " +
         "forensic analysis and facial biometric consistency checks. A final decision is made by an authorised reviewer.",
-        48, y + 18, { width: 468 }
+        48, y, { width: 500 }
       );
     doc.font("Helvetica").fontSize(8).fillColor("#94a3b8")
       .text("© 2026 Government of India — SNARE Identity Verification Platform", 0, doc.page.height - 56, { align: "center", width: doc.page.width });
